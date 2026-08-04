@@ -1,0 +1,19 @@
+LR_IROM1 0x08000000 0x00200000
+{
+  ER_IROM1 0x08000000 0x00200000
+  {
+    *.o (RESET, +First)
+    *(InRoot$$Sections)
+    .ANY (+RO)
+  }
+
+  RW_DMA 0x30000000 UNINIT 0x00004000
+  {
+    *(.dma_buffer)
+  }
+
+  RW_IRAM1 0x24000000 0x00080000
+  {
+    .ANY (+RW +ZI)
+  }
+}

@@ -1,0 +1,158 @@
+#include "screen_app.h"
+
+#include "hmi_tjc.h"
+#include "screen_config.h"
+#include "screen_key.h"
+#include "screen_i2c.h"
+#include "screen_spi.h"
+#include "screen_test.h"
+#include "screen_view.h"
+#include <stdio.h>
+#include <string.h>
+
+static ScreenDataFrame s_frame;
+static ScreenDisplayMode s_mode = SCREEN_MODE_WAVE;
+static ScreenWavePeriodMode s_wave_periods = (ScreenWavePeriodMode)SCREEN_DEFAULT_WAVE_PERIODS;
+static uint32_t s_last_refresh_ms;
+static uint32_t s_last_status_ms;
+static uint32_t s_rendered_sequence;
+uint8_t toggled_indeed = 0;
+
+static void ScreenApp_OnTouch(uint8_t page_id, uint8_t component_id, uint8_t event_type)
+{
+  (void)page_id;
+
+  if (event_type == 0u)
+  {
+    return;
+  }
+
+  if (component_id == 1u)
+  {
+    ScreenApp_SetDisplayMode(SCREEN_MODE_WAVE);
+  }
+  else if (component_id == 2u)
+  {
+    ScreenApp_SetDisplayMode(SCREEN_MODE_FFT);
+  }
+}
+
+void ScreenApp_SetDisplayMode(ScreenDisplayMode mode)
+{
+  s_mode = mode;
+  ScreenView_SetMode(s_mode);
+}
+
+void ScreenApp_SetWavePeriods(ScreenWavePeriodMode periods)
+{
+  if ((periods != SCREEN_WAVE_PERIOD_1) && (periods != SCREEN_WAVE_PERIOD_3))
+  {
+    periods = (ScreenWavePeriodMode)SCREEN_DEFAULT_WAVE_PERIODS;
+  }
+
+  s_wave_periods = periods;
+  ScreenView_SetWavePeriods(s_wave_periods);
+}
+
+ScreenWavePeriodMode ScreenApp_GetWavePeriods(void)
+{
+  return s_wave_periods;
+}
+
+void ScreenApp_SetFrame(const ScreenDataFrame *frame)
+{
+  if (frame == NULL)
+  {
+    return;
+  }
+
+  memcpy(&s_frame, frame, sizeof(s_frame));
+  if (frame->mode <= SCREEN_MODE_FFT)
+  {
+    ScreenApp_SetDisplayMode((ScreenDisplayMode)frame->mode);
+  }
+}
+
+void ScreenApp_ShowMeasurementError(void)
+{
+  memset(&s_frame, 0, sizeof(s_frame));
+  s_rendered_sequence = 0u;
+  ScreenView_ShowMeasurementError();
+}
+
+void ScreenApp_Init(void)
+{
+  memset(&s_frame, 0, sizeof(s_frame));
+  s_last_refresh_ms = 0u;
+  s_last_status_ms = 0u;
+  s_rendered_sequence = 0u;
+  s_wave_periods = (ScreenWavePeriodMode)SCREEN_DEFAULT_WAVE_PERIODS;
+
+  HMI_Init();
+  HMI_SetTouchCallback(ScreenApp_OnTouch);
+  ScreenKey_Init();
+  ScreenTest_Init();
+  ScreenView_Init();
+  ScreenApp_SetWavePeriods(s_wave_periods);
+}
+
+void ScreenApp_Task(void)
+{
+  static ScreenDataFrame latest;
+  uint32_t now = HAL_GetTick();
+
+  HMI_Task();
+  ScreenKey_Task(now);
+  ScreenSpi_Task();
+  ScreenI2c_Task();
+
+  if (ScreenKey_TakeSinglePress() != 0u)
+  {
+    ScreenWavePeriodMode next = (s_wave_periods == SCREEN_WAVE_PERIOD_1)
+                                  ? SCREEN_WAVE_PERIOD_3
+                                  : SCREEN_WAVE_PERIOD_1;
+    printf("[KEY] PA15 pressed, period %u -> %u\r\n",
+           (unsigned)s_wave_periods, (unsigned)next);
+    ScreenApp_SetWavePeriods(next);
+    if (s_frame.magic == SCREEN_FRAME_MAGIC)
+    {
+      /* PA15 只重画冻结的时域波形，不重复追加数值和频谱。 */
+      ScreenView_RenderWavePeriods(&s_frame, s_wave_periods);
+      s_last_refresh_ms = now;
+    }
+  }
+
+  if (ScreenSpi_GetLatest(&latest))
+  {
+    ScreenApp_SetFrame(&latest);
+  }
+#if SCREEN_TEST_ENABLE
+  else if (ScreenTest_Generate(now, s_mode, s_wave_periods, &latest))
+  {
+    ScreenApp_SetFrame(&latest);
+  }
+#endif
+
+  if ((now - s_last_status_ms) >= SCREEN_STATUS_INTERVAL_MS)
+  {
+    s_last_status_ms = now;
+    ScreenView_SetLinkState((s_frame.magic == SCREEN_FRAME_MAGIC) ? 1u : 0u, s_frame.sequence);
+  }
+
+  if ((s_frame.magic == SCREEN_FRAME_MAGIC) &&
+      (s_frame.sequence != s_rendered_sequence))
+  {
+    s_last_refresh_ms = now;
+    s_rendered_sequence = s_frame.sequence;
+    latest = s_frame;
+    /*
+
+    */
+    ScreenView_RenderFrame(&latest, s_mode, s_wave_periods);
+    
+    // if(toggled_indeed == 1){
+    //   toggled_indeed = 0;
+    //   HMI_ClearWave(SCREEN_WAVE_CTRL, 255u);
+    // }
+  }
+}

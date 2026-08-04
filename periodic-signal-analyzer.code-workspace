@@ -1,0 +1,128 @@
+{
+  "folders": [
+    {
+      "name": "F407",
+      "path": "AD9226_driver3/AD9226_driver"
+    },
+    {
+      "name": "H743",
+      "path": "H743_Signal_Processor/H743_Signal_Processor"
+    }
+  ],
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Build F407",
+        "type": "shell",
+        "command": "make",
+        "args": ["-j8"],
+        "options": {
+          "cwd": "${workspaceFolder:F407}"
+        },
+        "group": "build",
+        "problemMatcher": ["$gcc"]
+      },
+      {
+        "label": "Flash F407 - ST-Link",
+        "type": "shell",
+        "command": "make",
+        "args": ["flash"],
+        "options": {
+          "cwd": "${workspaceFolder:F407}"
+        },
+        "dependsOn": "Build F407",
+        "problemMatcher": [],
+        "detail": "多探针时设置 STLINK_SERIAL_F4，或只连接目标 F407。"
+      },
+      {
+        "label": "Flash F407 - CMSIS-DAP",
+        "type": "shell",
+        "command": "make",
+        "args": ["flash-cmsis-dap"],
+        "options": {
+          "cwd": "${workspaceFolder:F407}"
+        },
+        "dependsOn": "Build F407",
+        "problemMatcher": []
+      },
+      {
+        "label": "Configure H743 Firmware",
+        "type": "process",
+        "command": "cmake",
+        "args": [
+          "-S", "${workspaceFolder:H743}/Firmware_H743",
+          "-B", "${workspaceFolder:H743}/Firmware_H743/build/vscode-release",
+          "-G", "Ninja",
+          "-DCMAKE_BUILD_TYPE=Release",
+          "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder:H743}/Firmware_H743/cmake/arm-none-eabi-toolchain.cmake"
+        ],
+        "problemMatcher": []
+      },
+      {
+        "label": "Build H743 Firmware",
+        "type": "process",
+        "command": "cmake",
+        "args": [
+          "--build", "${workspaceFolder:H743}/Firmware_H743/build/vscode-release",
+          "--parallel"
+        ],
+        "dependsOn": "Configure H743 Firmware",
+        "group": "build",
+        "problemMatcher": ["$gcc"]
+      },
+      {
+        "label": "Configure H743 Host Tests",
+        "type": "process",
+        "command": "cmake",
+        "args": [
+          "-S", "${workspaceFolder:H743}",
+          "-B", "${workspaceFolder:H743}/build/vscode-host",
+          "-G", "Ninja",
+          "-DCMAKE_BUILD_TYPE=Release"
+        ],
+        "problemMatcher": []
+      },
+      {
+        "label": "Build H743 Host Tests",
+        "type": "process",
+        "command": "cmake",
+        "args": [
+          "--build", "${workspaceFolder:H743}/build/vscode-host",
+          "--parallel"
+        ],
+        "dependsOn": "Configure H743 Host Tests",
+        "problemMatcher": ["$gcc"]
+      },
+      {
+        "label": "Run H743 Host Tests",
+        "type": "process",
+        "command": "ctest",
+        "args": ["--output-on-failure"],
+        "options": {
+          "cwd": "${workspaceFolder:H743}/build/vscode-host"
+        },
+        "dependsOn": "Build H743 Host Tests",
+        "group": "test",
+        "problemMatcher": []
+      },
+      {
+        "label": "Flash H743 - ST-Link",
+        "type": "process",
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-Command",
+          "$serial = $env:STLINK_SERIAL_H7; $serialArgs = if ([string]::IsNullOrWhiteSpace($serial)) { @() } else { @('-c', \"adapter serial $serial\") }; & openocd -f interface/stlink.cfg @serialArgs -c \"transport select hla_swd\" -f target/stm32h7x.cfg -c \"program {${workspaceFolder:H743}/Firmware_H743/build/vscode-release/H743_Signal_Processor_Firmware.elf} verify reset exit\"; exit $LASTEXITCODE"
+        ],
+        "dependsOn": "Build H743 Firmware",
+        "problemMatcher": [],
+        "detail": "多探针时先设置 STLINK_SERIAL_H7，或只连接目标 H743；直接烧录 CMake/Ninja 生成的 ELF。"
+      }
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": []
+  }
+}

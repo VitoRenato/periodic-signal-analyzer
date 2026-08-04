@@ -1,0 +1,57 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug F407 - ST-Link",
+      "type": "cortex-debug",
+      "request": "launch",
+      "executable": "${workspaceFolder}/build/AD9226_driver.elf",
+      "servertype": "openocd",
+      "configFiles": [
+        "interface/stlink.cfg",
+        "target/stm32f4x.cfg"
+      ],
+      "openOCDLaunchCommands": [
+        "adapter serial ${input:stlinkSerialF4}"
+      ],
+      "preLaunchTask": "Build F407",
+      "cwd": "${workspaceFolder}",
+      "runToEntryPoint": "main",
+      "showDisassembly": "never",
+      "skipResetType": "None",
+      "restoreBreakpoints": true,
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      }
+    },
+    {
+      "name": "Debug F407 - CMSIS-DAP",
+      "type": "cortex-debug",
+      "request": "launch",
+      "executable": "${workspaceFolder}/build/AD9226_driver.elf",
+      "servertype": "openocd",
+      "configFiles": [
+        "interface/cmsis-dap.cfg",
+        "target/stm32f4x.cfg"
+      ],
+      "preLaunchTask": "Build F407",
+      "cwd": "${workspaceFolder}",
+      "runToEntryPoint": "main",
+      "showDisassembly": "never",
+      "skipResetType": "None",
+      "restoreBreakpoints": true,
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "stlinkSerialF4",
+      "type": "promptString",
+      "description": "请输入 F407 对应的 ST-Link 序列号；连接多个 ST-Link 时必须填写正确序列号。"
+    }
+  ]
+}

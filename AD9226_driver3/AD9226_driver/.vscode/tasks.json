@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build F407",
+      "type": "shell",
+      "command": "make",
+      "args": ["-j8"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"],
+      "detail": "arm-none-eabi-gcc 编译 STM32F407 工程"
+    },
+    {
+      "label": "Clean F407",
+      "type": "shell",
+      "command": "make",
+      "args": ["clean"],
+      "problemMatcher": [],
+      "detail": "删除 build/ 目录"
+    },
+    {
+      "label": "Flash F407 - ST-Link",
+      "type": "shell",
+      "command": "make",
+      "args": ["flash"],
+      "problemMatcher": [],
+      "detail": "通过 OpenOCD + ST-Link 烧录 .elf；多探针时设置 STLINK_SERIAL_F4"
+    },
+    {
+      "label": "Flash F407 - CMSIS-DAP",
+      "type": "shell",
+      "command": "make",
+      "args": ["flash-cmsis-dap"],
+      "problemMatcher": [],
+      "detail": "通过 OpenOCD + CMSIS-DAP 烧录 .elf"
+    }
+  ]
+}
