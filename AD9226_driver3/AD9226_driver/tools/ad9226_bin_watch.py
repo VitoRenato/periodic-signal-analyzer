@@ -89,7 +89,7 @@ DEFAULT_FRAME_LEN = STX_LEN + HEADER_LEN + DEFAULT_N * 2 + FOOTER_LEN  # 8206
 ZERO_CODE = 2055
 SCALE_UV_PER_CODE = 5236  # uV per code
 # AD9226 是 12-bit ADC,数据落在 s_adc_buf[i] 的低 12 位
-# 高 4 位是 PC12-PC15 的电平(被 DMA 一起读到 IDR 里了,不是 ADC 数据)
+# 高 4 位是 PF12-PF15 的电平(被 DMA 一起读到 IDR 里了,不是 ADC 数据)
 # 必须在 stats 之前 mask
 ADC_MASK = 0x0FFF
 
@@ -217,7 +217,7 @@ def reader_thread(ser: serial.Serial, parser: FrameParser, record_fh, stop_evt: 
 
 def frame_stats(arr: np.ndarray):
     """numpy 算 min/max/mean/std/pp (和 F407 端 frame_stats 一致)
-    关键: 必须先 & 0x0FFF,丢掉 PC12-PC15 噪声(高 4 bit)
+    关键: 必须先 & 0x0FFF,丢掉 PF12-PF15 噪声(高 4 bit)
     """
     if arr is None or len(arr) == 0:
         return None
@@ -244,7 +244,7 @@ def print_frame_summary(frame):
     print(f"  12-bit ADC code (低 12 位, 高 4 位已 mask):")
     print(f"    min={s['min']:4d} max={s['max']:4d} "
           f"pp={s['pp']:4d} mean={s['mean']:.1f} std={s['std']:.2f}")
-    print(f"  raw 16-bit IDR (含 PC12-PC15, 仅供排查):")
+    print(f"  raw 16-bit IDR (含 PF12-PF15, 仅供排查):")
     print(f"    min=0x{s['raw_min']:04X} max=0x{s['raw_max']:04X} mean={s['raw_mean']:.1f}")
     # 物理量
     mean_uV = (s['mean'] - ZERO_CODE) * SCALE_UV_PER_CODE
@@ -260,7 +260,7 @@ def save_frame_csv(frame, filename):
         return
     n = frame['n']
     idx = np.arange(n)
-    # mask 12-bit,免得 PC12-PC15 把零点和码值都污染了
+    # mask 12-bit,免得 PF12-PF15 把零点和码值都污染了
     codes12 = (frame['codes'] & ADC_MASK).astype(np.int64)
     uV = (codes12 - ZERO_CODE) * SCALE_UV_PER_CODE
     with open(filename, 'w') as f:
@@ -278,7 +278,7 @@ def plot_waveform(frame):
         text_histogram(frame)
         return
     n = frame['n']
-    # 关键: mask 12-bit, 免得 PC12-PC15 (高 4 bit) 把波形整条往上抬 26000 codes
+    # 关键: mask 12-bit, 免得 PF12-PF15 (高 4 bit) 把波形整条往上抬 26000 codes
     codes12 = (frame['codes'] & ADC_MASK).astype(np.float64)
     uV = (codes12 - ZERO_CODE) * SCALE_UV_PER_CODE / 1000.0  # mV
     t = np.arange(n) / frame['fs_hz'] * 1000.0  # ms

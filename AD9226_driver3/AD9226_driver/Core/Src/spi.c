@@ -15,7 +15,7 @@
  *  - 500ms 超时:等不到 H7_READY,丢本帧 + 错误计数+1,F407 不卡死
  *
  *  数据格式:与技术手册 §4 一致,每样本 16 bit,仅低 12 bit 有效,高 4 bit = 0。
- *  发送前会屏蔽 buf[i] 高 4 位,避免 GPIOC->IDR 的 PC12~PC15 杂散电平污染 H7。
+ *  发送前会屏蔽 buf[i] 高 4 位,避免 GPIOF->IDR 的 PF12~PF15 杂散电平污染 H7。
  */
 #include "spi.h"
 #include "main.h"      /* hspi1, huart1, __io_putchar (printf) */

@@ -45,8 +45,8 @@ static void ScreenView_FormatMhz(uint32_t mhz, char *value, size_t value_size, c
 
 static uint8_t ScreenView_MapWaveCode(uint16_t code)
 {
-  const int32_t radius = (int32_t)SCREEN_CURVE_SAMPLE_ZERO
-      - (int32_t)SCREEN_CURVE_SAMPLE_MARGIN;
+  const int32_t zero = ((int32_t)SCREEN_WAVE_HEIGHT - 1) / 2;
+  const int32_t radius = zero - (int32_t)SCREEN_CURVE_SAMPLE_MARGIN;
   int32_t delta = (int32_t)code - (int32_t)SCREEN_WAVE_CODE_ZERO;
   int32_t y;
 
@@ -58,25 +58,22 @@ static uint8_t ScreenView_MapWaveCode(uint16_t code)
   {
     delta = (int32_t)SCREEN_WAVE_CODE_RADIUS;
   }
-  y = (int32_t)SCREEN_CURVE_SAMPLE_ZERO
-      + (delta * radius) / (int32_t)SCREEN_WAVE_CODE_RADIUS;
+  y = zero + (delta * radius) / (int32_t)SCREEN_WAVE_CODE_RADIUS;
   return (uint8_t)y;
 }
 
 static uint8_t ScreenView_MapSpectrum(uint16_t sample, uint16_t max_sample)
 {
-  const uint32_t span = SCREEN_CURVE_SAMPLE_MAX
-      - SCREEN_CURVE_SAMPLE_MARGIN
-      - SCREEN_CURVE_SAMPLE_ZERO;
-  uint32_t y = SCREEN_CURVE_SAMPLE_ZERO;
+  const uint32_t span = SCREEN_FFT_HEIGHT - 1u - SCREEN_CURVE_SAMPLE_MARGIN;
+  uint32_t y = 0u;
 
   if (max_sample != 0u)
   {
-    y += ((uint32_t)sample * span) / max_sample;
+    y = ((uint32_t)sample * span) / max_sample;
   }
-  if (y > (SCREEN_CURVE_SAMPLE_MAX - SCREEN_CURVE_SAMPLE_MARGIN))
+  if (y > span)
   {
-    y = SCREEN_CURVE_SAMPLE_MAX - SCREEN_CURVE_SAMPLE_MARGIN;
+    y = span;
   }
   return (uint8_t)y;
 }
@@ -139,7 +136,6 @@ static void ScreenView_RenderMeasurements(const ScreenDataFrame *frame)
 static void ScreenView_RenderWave(const ScreenDataFrame *frame, ScreenWavePeriodMode periods)
 {
   uint16_t visible_count = frame->wave_count;
-  uint16_t start = 0u;
   uint16_t points;
   uint16_t i;
   static ScreenWavePeriodMode s_last_periods = 0xFFu;
@@ -151,8 +147,6 @@ static void ScreenView_RenderWave(const ScreenDataFrame *frame, ScreenWavePeriod
     visible_count = 256u;
   }
 
-  (void)periods; /* 数据帧里已经按模式填好对应点数，这里直接全部发送 */
-
   points = (visible_count < SCREEN_WAVE_VISIBLE_POINTS) ? visible_count : SCREEN_WAVE_VISIBLE_POINTS;
   if (points == 0u)
   {
@@ -161,7 +155,11 @@ static void ScreenView_RenderWave(const ScreenDataFrame *frame, ScreenWavePeriod
 
   for (i = 0u; i < points; i++)
   {
-    uint16_t src = (uint16_t)(start + i);
+    uint16_t src = 0u;
+    if (points > 1u)
+    {
+      src = (uint16_t)(((uint32_t)i * (visible_count - 1u)) / (points - 1u));
+    }
     s_pixel_buf[i] = ScreenView_MapWaveCode(frame->wave[src]);
   }
 
@@ -177,7 +175,7 @@ static void ScreenView_RenderWave(const ScreenDataFrame *frame, ScreenWavePeriod
 
 static void ScreenView_RenderFft(const ScreenDataFrame *frame)
 {
-  uint16_t points = (frame->fft_count < SCREEN_FFT_VISIBLE_POINTS) ? frame->fft_count : SCREEN_FFT_VISIBLE_POINTS;
+  uint16_t points = (frame->fft_count != 0u) ? SCREEN_FFT_VISIBLE_POINTS : 0u;
   uint16_t max_value;
   uint16_t i;
   static uint8_t s_pixel_buf[SCREEN_FFT_VISIBLE_POINTS];
@@ -195,7 +193,7 @@ static void ScreenView_RenderFft(const ScreenDataFrame *frame)
 
   for (i = 0u; i < points; i++)
   {
-    /* 首尾对齐抽取，保证 500 kHz 所在的最后一个 bin 不会被漏掉。 */
+    /* 源频点覆盖整个控件宽度，保留最高频率端点。 */
     uint16_t src = 0u;
     if (points > 1u)
     {

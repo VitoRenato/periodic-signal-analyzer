@@ -1,7 +1,7 @@
 /**
  * @file    ad9226.h
  * @brief   AD9226 并行 ADC 采集驱动 (F407, TIM1 PWM + DMA 触发)
- * @note    12 bit 数据落在 GPIOC->IDR 低 12 位
+ * @note    12 bit 数据落在 GPIOF->IDR 低 12 位
  */
 #ifndef AD9226_H
 #define AD9226_H
@@ -9,7 +9,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "main.h"   /* HAL_StatusTypeDef */
-#include "ad9226_code_normalizer.h"
 
 /* 一帧采样数 (G 题 N=4096) */
 #define AD9226_SAMPLE_COUNT  (4096u)
@@ -31,15 +30,12 @@ void AD9226_Start(void);
 bool AD9226_IsDone(void);
 
 /**
- * @brief  对刚完成的DMA帧执行一次码字归一化
+ * @brief  保留DMA帧低12位原始ADC码，仅清除GPIO的bit12~bit15
  * @note   同一帧重复调用不会再次改写数据;必须在GetBuf和SPI发送之前调用
  */
 bool AD9226_FinalizeFrame(void);
 
-/** @brief  获取最近一次归一化统计,尚未Finalize时返回false */
-bool AD9226_GetNormalizeStats(Ad9226CodeNormalizeStats *stats);
-
-/** @brief  取归一化后的结果缓冲区指针(有效码范围0~4095) */
+/** @brief  取原始采样缓冲区；DMA完成并Finalize后有效码范围为0~4095 */
 const uint16_t *AD9226_GetBuf(void);
 
 /**

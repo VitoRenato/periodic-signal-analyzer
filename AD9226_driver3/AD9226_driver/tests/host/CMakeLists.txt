@@ -136,3 +136,23 @@ else()
 endif()
 
 add_test(NAME measurement_lock_policy_tests COMMAND measurement_lock_policy_tests)
+
+
+add_executable(ad9226_raw_capture_tests
+    test_ad9226_raw_capture.c
+    ../../Core/Src/ad9226.c
+)
+target_include_directories(ad9226_raw_capture_tests PRIVATE
+    ../../Core/Inc
+)
+if(MSVC)
+    target_compile_options(ad9226_raw_capture_tests PRIVATE
+        /W4 /WX /FI${CMAKE_CURRENT_SOURCE_DIR}/fakes/ad9226_hal.h
+    )
+else()
+    target_compile_options(ad9226_raw_capture_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+        -include ${CMAKE_CURRENT_SOURCE_DIR}/fakes/ad9226_hal.h
+    )
+endif()
+add_test(NAME ad9226_raw_capture_tests COMMAND ad9226_raw_capture_tests)

@@ -1,6 +1,6 @@
 /**
  * @file    ad9226.c
- * @brief   AD9226 采集驱动实现: TIM1_UP 触发 DMA 读 GPIOC->IDR
+ * @brief   AD9226 采集驱动实现: TIM1_UP 触发 DMA 读 GPIOF->IDR
  * @note    每 4096 点完成,设 done_flag,关 DMA
  */
 #include "ad9226.h"
@@ -15,12 +15,9 @@ extern DMA_HandleTypeDef  hdma_tim1_up;
 static uint16_t s_adc_buf[AD9226_SAMPLE_COUNT];
 static volatile bool s_adc_done = false;
 static bool s_frame_finalized = false;
-static bool s_frame_normalize_ok = false;
-static Ad9226CodeNormalizeStats s_normalize_stats;
+
 /* 当前采样率 (Hz),默认值 = 168M / (0+1) / (81+1) = 2 048 780 Hz */
 static volatile uint32_t s_fs_hz = 2048780UL;
-
-#define AD9226_NORMALIZE_ANCHOR_CODE 2055U
 
 /* 等效采样状态 */
 static volatile bool     s_eq_mode = false;
@@ -32,8 +29,6 @@ void AD9226_Init(void)
 {
     s_adc_done = false;
     s_frame_finalized = false;
-    s_frame_normalize_ok = false;
-    s_normalize_stats = (Ad9226CodeNormalizeStats){0};
     /* 启动 TIM1 CH1 PWM 输出 (PE9 → AD9226 CLKIN, 2.048 MHz)
      * 注:CubeMX 配的 TIM1_CH1 是 PE9(非默认 PA8),所以模块 CLK 实际接到 PE9 */
     if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1) != HAL_OK) {
@@ -45,7 +40,6 @@ void AD9226_Start(void)
 {
     s_adc_done = false;
     s_frame_finalized = false;
-    s_frame_normalize_ok = false;
 
     /* 等效采样模式下捕获本帧实际使用的 divider(TIM1 ARR+1),
      * 避免命令中途到达导致重建使用错误的 divider。 */
@@ -55,10 +49,10 @@ void AD9226_Start(void)
         s_eq_divider_cap = 0U;
     }
 
-    /* DMA 每次读 GPIOC->IDR (32 bit) → 内存 (16 bit), 触发源 = TIM1_UP */
+    /* DMA 每次读 GPIOF->IDR 低16位 → 内存 (16 bit), 触发源 = TIM1_UP */
     if (HAL_DMA_Start_IT(&hdma_tim1_up,
-                         (uint32_t)&GPIOC->IDR,
-                         (uint32_t)s_adc_buf,
+                         (uint32_t)(uintptr_t)&GPIOF->IDR,
+                         (uint32_t)(uintptr_t)s_adc_buf,
                          AD9226_SAMPLE_COUNT) != HAL_OK) {
         Error_Handler();
     }
@@ -79,23 +73,12 @@ bool AD9226_FinalizeFrame(void)
     }
     if (!s_frame_finalized)
     {
-        s_frame_normalize_ok = Ad9226CodeNormalizer_Run(
-            s_adc_buf,
-            AD9226_SAMPLE_COUNT,
-            AD9226_NORMALIZE_ANCHOR_CODE,
-            &s_normalize_stats);
+        for (uint32_t i = 0U; i < AD9226_SAMPLE_COUNT; ++i)
+        {
+            s_adc_buf[i] &= 0x0fffU;
+        }
         s_frame_finalized = true;
     }
-    return s_frame_normalize_ok;
-}
-
-bool AD9226_GetNormalizeStats(Ad9226CodeNormalizeStats *stats)
-{
-    if ((stats == NULL) || !s_frame_finalized)
-    {
-        return false;
-    }
-    *stats = s_normalize_stats;
     return true;
 }
 
@@ -118,7 +101,7 @@ void HAL_DMA_XferCpltCallback(DMA_HandleTypeDef *hdma)
 
 /* TIM1_CLK = 168 MHz, PSC = 0 → Fs = 168e6 / (ARR+1)
  * G 题可用范围:5 kHz (ARR=33599) ~ 20 MHz (ARR=7)
- * 上限 20 MHz 留余量给 DMA 读 GPIOC->IDR */
+ * 上限 20 MHz 留余量给 DMA 读 GPIOF->IDR */
 #define AD9226_FS_MIN  5000U
 #define AD9226_FS_MAX  20000000U
 

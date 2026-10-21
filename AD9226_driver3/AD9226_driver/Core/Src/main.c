@@ -65,6 +65,8 @@ DMA_HandleTypeDef hdma_usart2_tx; /* USART2 TX:DMA1 Stream6 */
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;   /* F4_acq -> F4_display 波形发送口 (PA2 TX / PA3 RX) */
 extern UART_HandleTypeDef huart1;  /* __io_putchar 用 */
+static volatile bool g_calibration_dump_req = false;
+static uint32_t g_calibration_seq = 0U;
 volatile bool g_dump_req = false;  /* 串口发 'd' 后触发下一帧波形打印(128 点,兼容 viewer) */
 volatile bool g_raw_dump_req = false;  /* 'r' 后触发下一帧全 4096 点 raw dump,跳过 summary */
 volatile uint32_t g_raw_dump_seq = 0;  /* raw dump 序列号,viewer 用来配对 */
@@ -96,6 +98,7 @@ static void frame_stats(const uint16_t *buf, uint32_t n,
                         uint16_t *out_min, uint16_t *out_max,
                         uint32_t *out_mean, float *out_std);
 static void dump_frame_csv(const uint16_t *buf, uint32_t dump_n);
+static void dump_calibration_csv(const uint16_t *buf);
 static void dump_frame_binary(const uint16_t *buf, uint32_t n,
                               uint32_t seq, uint32_t fs_hz);
 static void dump_eq_waveform(uint16_t cycles);   /* 'e' 命令:dump 重建后 1/3 周期 */
@@ -228,6 +231,7 @@ int main(void)
   AD9226_Init();
   printf("[2] AD9226_Init OK, Fs=%lu Hz\r\n",
          (unsigned long)AD9226_GetSampleRate());
+  printf("[ADC12] raw capture enabled; send c for 4096 raw codes\r\n");
   /* 初始化命令解析模块:H7 的命令通过 SPI1 全双工命令槽回传 */
   SpiCmd_Init();
   printf("[2b] SpiCmd_Init OK\r\n");
@@ -286,15 +290,31 @@ int main(void)
       }
       /* 接收已在 HAL_UART_RxCpltCallback 中重新启动,这里不需要再开 */
     }
+    if (g_calibration_dump_req) {
+      g_continuous_dump = false;
+      g_raw_dump_req = false;
+      g_dump_req = false;
+      g_eq_dump_cycles = 0U;
+      if (g_measurement_state != MEASUREMENT_ACQUIRING) {
+        if (HAL_DMA_GetState(&hdma_tim1_up) == HAL_DMA_STATE_BUSY) {
+          g_calibration_dump_req = false;
+          printf("[CAL12 ERROR] DMA busy; retry c after capture completes\r\n");
+        } else {
+          g_measurement_state = MEASUREMENT_ACQUIRING;
+          g_measurement_started_ms = HAL_GetTick();
+          AD9226_Start();
+        }
+      }
+    }
     if ((g_measurement_state == MEASUREMENT_ACQUIRING) && AD9226_IsDone()) {
-      /* DMA原始码可能在低8位边界发生回绕；所有下游必须只使用归一化帧。 */
+      /* GPIO bit12~bit15 are unrelated pins; ADC bit0~bit11 stay unchanged. */
       if (!AD9226_FinalizeFrame()) {
-        printf("[ADC] normalize failed\r\n");
+        printf("[ADC] frame not complete\r\n");
         if ((HAL_GetTick() - g_measurement_started_ms) >= 2000u) {
           g_measurement_state = MEASUREMENT_ERROR;
           g_measurement_elapsed_ms = HAL_GetTick() - g_measurement_started_ms;
           ScreenApp_ShowMeasurementError();
-          printf("[MEAS] ERROR normalize timeout\r\n");
+          printf("[MEAS] ERROR capture timeout\r\n");
         } else {
           AD9226_Start();
         }
@@ -302,6 +322,12 @@ int main(void)
       }
       const uint16_t *buf = AD9226_GetBuf();
       uint32_t fs_hz = AD9226_GetSampleRate();
+      if (g_calibration_dump_req) {
+        g_calibration_dump_req = false;
+        g_measurement_state = MEASUREMENT_FROZEN;
+        dump_calibration_csv(buf);
+        continue;
+      }
 
       /* === 主流程: SPI1 全双工一帧 8208 B, 同时发样本到 H7 并收 H7 命令 ===
        * 帧格式: [16 B 命令槽][8192 B 样本], 命令槽由 H7 通过 MISO 发回。
@@ -429,26 +455,16 @@ int main(void)
 
       /* 'p' 命令: 用户主动要一帧 summary,这里 printf 出去 */
       if (g_print_summary_req) {
-        Ad9226CodeNormalizeStats normalize_stats = {0};
-        const bool have_normalize_stats = AD9226_GetNormalizeStats(&normalize_stats);
         g_print_summary_req = false;
         uint16_t mn, mx; uint32_t mean; float std;
         frame_stats(buf, AD9226_SAMPLE_COUNT, &mn, &mx, &mean, &std);
         int32_t std_x100 = (int32_t)(std * 100.0f + 0.5f);
         if (std_x100 < 0) std_x100 = 0;
-        printf("seq=%lu mean=%lu min=%u max=%u pp=%u std=%ld.%02ld Fs=%lu cont=%d "
-               "raw=[%u,%u] norm=[%u,%u] shift=%d maxstep=%u amb=%u\r\n",
+        printf("seq=%lu mean=%lu min=%u max=%u pp=%u std=%ld.%02ld Fs=%lu cont=%d bits=12 raw=1\r\n",
                (unsigned long)g_continuous_seq, (unsigned long)mean,
                mn, mx, (unsigned)(mx - mn),
                (long)(std_x100 / 100), (long)(std_x100 % 100),
-               (unsigned long)fs_hz, (int)g_continuous_dump,
-               have_normalize_stats ? (unsigned)normalize_stats.raw_min : 0u,
-               have_normalize_stats ? (unsigned)normalize_stats.raw_max : 0u,
-               have_normalize_stats ? (unsigned)normalize_stats.normalized_min : 0u,
-               have_normalize_stats ? (unsigned)normalize_stats.normalized_max : 0u,
-               have_normalize_stats ? (int)normalize_stats.frame_shift : 0,
-               have_normalize_stats ? (unsigned)normalize_stats.max_step : 0u,
-               have_normalize_stats ? (unsigned)normalize_stats.ambiguous : 1u);
+               (unsigned long)fs_hz, (int)g_continuous_dump);
       }
 
       /* 启下一轮 */
@@ -465,11 +481,9 @@ int main(void)
       printf("[MEAS] ERROR response timeout\r\n");
     }
 
-    /* 冻结后仍允许串口执行 p，便于现场核对 1.50 V 偏置下的归一化数据。 */
+    /* 冻结后p查看当前原始码摘要，c请求新一帧原始码。 */
     if ((g_measurement_state == MEASUREMENT_FROZEN) && g_print_summary_req) {
       const uint16_t *buf = AD9226_GetBuf();
-      Ad9226CodeNormalizeStats normalize_stats = {0};
-      const bool have_normalize_stats = AD9226_GetNormalizeStats(&normalize_stats);
       uint16_t mn, mx;
       uint32_t mean;
       float std;
@@ -479,18 +493,10 @@ int main(void)
       frame_stats(buf, AD9226_SAMPLE_COUNT, &mn, &mx, &mean, &std);
       std_x100 = (int32_t)(std * 100.0f + 0.5f);
       if (std_x100 < 0) std_x100 = 0;
-      printf("frozen mean=%lu min=%u max=%u pp=%u std=%ld.%02ld Fs=%lu "
-             "raw=[%u,%u] norm=[%u,%u] shift=%d maxstep=%u amb=%u\r\n",
+      printf("frozen mean=%lu min=%u max=%u pp=%u std=%ld.%02ld Fs=%lu bits=12 raw=1\r\n",
              (unsigned long)mean, mn, mx, (unsigned)(mx - mn),
              (long)(std_x100 / 100), (long)(std_x100 % 100),
-             (unsigned long)AD9226_GetSampleRate(),
-             have_normalize_stats ? (unsigned)normalize_stats.raw_min : 0u,
-             have_normalize_stats ? (unsigned)normalize_stats.raw_max : 0u,
-             have_normalize_stats ? (unsigned)normalize_stats.normalized_min : 0u,
-             have_normalize_stats ? (unsigned)normalize_stats.normalized_max : 0u,
-             have_normalize_stats ? (int)normalize_stats.frame_shift : 0,
-             have_normalize_stats ? (unsigned)normalize_stats.max_step : 0u,
-             have_normalize_stats ? (unsigned)normalize_stats.ambiguous : 1u);
+             (unsigned long)AD9226_GetSampleRate());
     }
 
     /* 串口屏任务：按键去抖、HMI 通信、按需渲染波形/测量值 */
@@ -813,20 +819,25 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PC0 PC1 PC2 PC3
-                           PC4 PC5 PC6 PC7
-                           PC8 PC9 PC10 PC11
-                           PC12 */
+  /*Configure GPIO pins : PF0 PF1 PF2 PF3
+                           PF4 PF5 PF6 PF7
+                           PF8 PF9 PF10 PF11 */
   GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
                           |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7
-                          |GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11
-                          |GPIO_PIN_12;
+                          |GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC12 (AD9226 OTR) */
+  GPIO_InitStruct.Pin = GPIO_PIN_12;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
@@ -855,6 +866,9 @@ int __io_putchar(int ch)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart == &huart1) {
+        if ((g_uart_rx_byte == 'c') || (g_uart_rx_byte == 'C')) {
+            g_calibration_dump_req = true;
+        }
         g_uart_rx_flag = true;
         HAL_UART_Receive_IT(&huart1, (uint8_t *)&g_uart_rx_byte, 1);
     } else if (huart == &huart2) {
@@ -1414,7 +1428,7 @@ static void screen_build_frame(ScreenDataFrame *frame,
 
             if ((adc_min == 0u) || (adc_max >= 0x0FFEu))
             {
-                printf("[SCREEN] WARNING: normalized ADC frame clipped (adc=[%u,%u])\r\n",
+                printf("[SCREEN] WARNING: raw ADC frame clipped (adc=[%u,%u])\r\n",
                        (unsigned)adc_min, (unsigned)adc_max);
             }
         }
@@ -1450,7 +1464,39 @@ static void frame_stats(const uint16_t *buf, uint32_t n,
     *out_std = sqrtf(var);
 }
 
-/* CSV 打印前 dump_n 点: 索引,原始码值,微伏(基于当前标定 2055,5236) */
+static void dump_calibration_csv(const uint16_t *buf)
+{
+    const uint32_t arr = __HAL_TIM_GET_AUTORELOAD(&htim1);
+    const uint32_t psc = htim1.Instance->PSC;
+    const uint32_t actual_fs_hz = (ES_TIMER_CLOCK_HZ / (psc + 1U)) / (arr + 1U);
+    uint32_t sum = 0U;
+    uint16_t minimum = 0x0fffU;
+    uint16_t maximum = 0U;
+    uint32_t bit_ones[12] = {0U};
+    for (uint32_t i = 0U; i < AD9226_SAMPLE_COUNT; ++i) {
+        const uint16_t code = buf[i] & 0x0fffU;
+        sum += code;
+        if (code < minimum) minimum = code;
+        if (code > maximum) maximum = code;
+        for (uint32_t bit = 0U; bit < 12U; ++bit) {
+            if ((code & (1U << bit)) != 0U) ++bit_ones[bit];
+        }
+    }
+    ++g_calibration_seq;
+    printf("[CAL12 BEGIN] seq=%lu count=%lu bits=12 fs_hz=%lu arr=%lu psc=%lu min=%u max=%u pp=%u sum=%lu\r\n",
+           (unsigned long)g_calibration_seq, (unsigned long)AD9226_SAMPLE_COUNT,
+           (unsigned long)actual_fs_hz, (unsigned long)arr, (unsigned long)psc,
+           minimum, maximum, (unsigned)(maximum - minimum), (unsigned long)sum);
+    printf("# bit_ones_lsb_to_msb");
+    for (uint32_t bit = 0U; bit < 12U; ++bit) printf(",%lu", (unsigned long)bit_ones[bit]);
+    printf("\r\nindex,code\r\n");
+    for (uint32_t i = 0U; i < AD9226_SAMPLE_COUNT; ++i) {
+        printf("%lu,%u\r\n", (unsigned long)i, (unsigned)(buf[i] & 0x0fffU));
+    }
+    printf("[CAL12 END] seq=%lu\r\n", (unsigned long)g_calibration_seq);
+}
+
+/* CSV 打印前 dump_n 点: 索引,原始码值,微伏(旧标定；新标定使用c命令的原始码) */
 static void dump_frame_csv(const uint16_t *buf, uint32_t dump_n)
 {
     if (dump_n > AD9226_SAMPLE_COUNT) dump_n = AD9226_SAMPLE_COUNT;
@@ -1502,7 +1548,7 @@ static void dump_frame_binary(const uint16_t *buf, uint32_t n,
 
     /* 8KB raw samples 直送 (Cortex-M4 LE,buf 内存布局就是 LE uint16)
      * 关键: 必须 & 0x0FFF! AD9226 12-bit 数据落在 s_adc_buf[i] 低 12 位,
-     * 高 4 位是 PC12-PC15 的电平(被 DMA 一起读到 IDR 里了,不是 ADC 数据)
+     * 高 4 位是 PF12-PF15 的电平(被 DMA 一起读到 IDR 里了,不是 ADC 数据)
      * 不 mask 会让 viewer 看到 mean=26000 (0x6<<12) 而不是 ~2055
      * 用 static 8KB 缓冲避免 8KB 局部数组爆 F407 栈 (默认栈 8KB)
      * 同时 dump_frame_binary 在 main loop 调,不在 ISR 调,static 不会有竞争 */

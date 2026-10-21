@@ -57,7 +57,6 @@ Core/Src/spicmd.c \
 Core/Src/equivalent_sampling.c \
 USER/protocol/h743_measurement_rx.c \
 USER/protocol/h743_measurement_model.c \
-USER/signal/ad9226_code_normalizer.c \
 Core/Src/stm32f4xx_it.c \
 Core/Src/system_stm32f4xx.c \
 Core/Src/stm32f4xx_hal_msp.c \
