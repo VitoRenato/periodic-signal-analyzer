@@ -94,6 +94,18 @@ static uint16_t ScreenView_MaxU16(const uint16_t *data, uint16_t count)
   return max_value;
 }
 
+static void ScreenView_ReverseCurvePayload(uint8_t *pixels, uint16_t count)
+{
+  /* Both HMI controls use dir=0: new points enter at the left edge. */
+  for (uint16_t i = 0u; i < count / 2u; ++i)
+  {
+    const uint16_t opposite = count - 1u - i;
+    const uint8_t value = pixels[i];
+    pixels[i] = pixels[opposite];
+    pixels[opposite] = value;
+  }
+}
+
 static void ScreenView_RenderMeasurements(const ScreenDataFrame *frame)
 {
   char value[24];
@@ -169,6 +181,7 @@ static void ScreenView_RenderWave(const ScreenDataFrame *frame, ScreenWavePeriod
     s_last_periods = periods;
     HMI_ClearWave(SCREEN_WAVE_CTRL, 255u);
   }
+  ScreenView_ReverseCurvePayload(s_pixel_buf, points);
   HMI_Addt_Send(SCREEN_WAVE_CTRL, 0u, s_pixel_buf, points);
 }
 
@@ -204,6 +217,7 @@ static void ScreenView_RenderFft(const ScreenDataFrame *frame)
   }
   /* addt 会向曲线缓存继续追加；重画前先清空，避免出现整份重复频谱。 */
   HMI_ClearWave(SCREEN_FFT_CTRL, 255u);
+  ScreenView_ReverseCurvePayload(s_pixel_buf, points);
   HMI_Addt_Send(SCREEN_FFT_CTRL, 0u, s_pixel_buf, points);
 }
 

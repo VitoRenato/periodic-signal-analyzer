@@ -118,6 +118,32 @@ endif()
 
 add_test(NAME screen_view_tests COMMAND screen_view_tests)
 
+add_executable(screen_curve_direction_tests
+    test_screen_curve_direction.c
+    ../../USER/app/screen_signal_model.c
+    ../../USER/app/screen_view.c
+    ../../USER/drivers/hmi_tjc.c
+)
+
+target_include_directories(screen_curve_direction_tests PRIVATE
+    fakes
+    ../../USER/app
+    ../../USER/config
+    ../../USER/drivers
+    ../../USER/protocol
+)
+
+if(MSVC)
+    target_compile_options(screen_curve_direction_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(screen_curve_direction_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+    target_link_libraries(screen_curve_direction_tests PRIVATE m)
+endif()
+
+add_test(NAME screen_curve_direction_tests COMMAND screen_curve_direction_tests)
+
 add_executable(measurement_lock_policy_tests
     test_measurement_lock_policy.c
     ../../USER/app/measurement_lock_policy.c

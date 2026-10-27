@@ -11,9 +11,9 @@ static unsigned s_wave_addt_count;
 static unsigned s_fft_addt_count;
 static unsigned s_wave_clear_count;
 static unsigned s_fft_clear_count;
-static uint8_t s_last_wave_data[SCREEN_WAVE_VISIBLE_POINTS];
+static uint8_t s_wave_canvas[SCREEN_WAVE_VISIBLE_POINTS];
 static uint16_t s_last_wave_len;
-static uint8_t s_last_fft_data[SCREEN_FFT_VISIBLE_POINTS];
+static uint8_t s_fft_canvas[SCREEN_FFT_VISIBLE_POINTS];
 static uint16_t s_last_fft_len;
 
 HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef *huart, uint8_t *data,
@@ -35,15 +35,15 @@ bool HMI_Addt_Send(const char *curve_id, uint8_t ch, const uint8_t *data, uint16
   assert(len > 0u);
   if (strcmp(curve_id, "s_wave") == 0)
   {
-    assert(len <= sizeof(s_last_wave_data));
-    memcpy(s_last_wave_data, data, len);
+    assert(len <= sizeof(s_wave_canvas));
+    for (uint16_t x = 0u; x < len; ++x) s_wave_canvas[x] = data[len - 1u - x];
     s_last_wave_len = len;
     ++s_wave_addt_count;
   }
   else if (strcmp(curve_id, "s_fft") == 0)
   {
-    assert(len <= sizeof(s_last_fft_data));
-    memcpy(s_last_fft_data, data, len);
+    assert(len <= sizeof(s_fft_canvas));
+    for (uint16_t x = 0u; x < len; ++x) s_fft_canvas[x] = data[len - 1u - x];
     s_last_fft_len = len;
     ++s_fft_addt_count;
   }
@@ -68,13 +68,13 @@ static void test_wave_peaks_fit_161_pixel_control(void)
   frame.wave[1] = 2048u;
   frame.wave[2] = 4095u;
   ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_3);
-  fprintf(stderr, "wave mapping actual=[%u,%u,%u], expected=[8,80,152]\n",
-          s_last_wave_data[0], s_last_wave_data[1], s_last_wave_data[2]);
+  fprintf(stderr, "dir=0 canvas actual=[%u,%u,%u], expected=[8,80,152]\n",
+          s_wave_canvas[0], s_wave_canvas[1], s_wave_canvas[2]);
   assert(s_last_wave_len == 3u);
-  assert(s_last_wave_data[0] == 8u);
-  assert(s_last_wave_data[1] == 80u);
-  assert(s_last_wave_data[2] == 152u);
-  assert((80u - s_last_wave_data[0]) == (s_last_wave_data[2] - 80u));
+  assert(s_wave_canvas[0] == 8u);
+  assert(s_wave_canvas[1] == 80u);
+  assert(s_wave_canvas[2] == 152u);
+  assert((80u - s_wave_canvas[0]) == (s_wave_canvas[2] - 80u));
 }
 
 static void test_period_switch_does_not_duplicate_spectrum(void)
@@ -108,8 +108,8 @@ static void test_three_periods_fit_width_and_preserve_last_sample(void)
   original = frame;
   ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_3);
   assert(s_last_wave_len == 761u);
-  assert(s_last_wave_data[0] == 80u);
-  assert(s_last_wave_data[760] == 152u);
+  assert(s_wave_canvas[0] == 80u);
+  assert(s_wave_canvas[760] == 152u);
   assert(memcmp(&frame, &original, sizeof(frame)) == 0);
 }
 
@@ -122,8 +122,8 @@ static void test_one_period_does_not_read_second_period(void)
   frame.wave[256] = 4095u;
   ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_1);
   assert(s_last_wave_len == 256u);
-  assert(s_last_wave_data[255] == 8u);
-  for (uint16_t i = 0; i < s_last_wave_len; ++i) assert(s_last_wave_data[i] <= 80u);
+  assert(s_wave_canvas[255] == 8u);
+  for (uint16_t i = 0; i < s_last_wave_len; ++i) assert(s_wave_canvas[i] <= 80u);
 }
 
 static void test_all_adc_codes_stay_inside_wave_height(void)
@@ -137,9 +137,9 @@ static void test_all_adc_codes_stay_inside_wave_height(void)
     assert(s_last_wave_len == 64u);
     for (uint16_t i = 0; i < s_last_wave_len; ++i)
     {
-      assert(s_last_wave_data[i] >= 8u);
-      assert(s_last_wave_data[i] <= 152u);
-      if (i > 0u) assert(s_last_wave_data[i] >= s_last_wave_data[i - 1u]);
+      assert(s_wave_canvas[i] >= 8u);
+      assert(s_wave_canvas[i] <= 152u);
+      if (i > 0u) assert(s_wave_canvas[i] >= s_wave_canvas[i - 1u]);
     }
   }
 }
@@ -150,7 +150,7 @@ static void test_zero_spectrum_uses_bottom_baseline(void)
   frame.fft_count = 256u;
   ScreenView_RenderFrame(&frame, SCREEN_MODE_FFT, SCREEN_WAVE_PERIOD_3);
   assert(s_last_fft_len == 441u);
-  for (uint16_t i = 0; i < s_last_fft_len; ++i) assert(s_last_fft_data[i] == 0u);
+  for (uint16_t i = 0; i < s_last_fft_len; ++i) assert(s_fft_canvas[i] == 0u);
 }
 
 static void test_last_fft_bin_reaches_right_edge(void)
@@ -160,8 +160,8 @@ static void test_last_fft_bin_reaches_right_edge(void)
   frame.fft[255] = 125u;
   ScreenView_RenderFrame(&frame, SCREEN_MODE_FFT, SCREEN_WAVE_PERIOD_3);
   assert(s_last_fft_len == 441u);
-  assert(s_last_fft_data[0] == 0u);
-  assert(s_last_fft_data[440] == 112u);
+  assert(s_fft_canvas[0] == 0u);
+  assert(s_fft_canvas[440] == 112u);
 }
 
 static void test_each_spectrum_bin_survives_width_mapping(void)
@@ -179,12 +179,37 @@ static void test_each_spectrum_bin_survives_width_mapping(void)
     assert(s_last_fft_len == 441u);
     for (uint16_t i = 0; i < s_last_fft_len; ++i)
     {
-      assert(s_last_fft_data[i] <= 112u);
-      if (s_last_fft_data[i] == 112u) ++peaks;
+      assert(s_fft_canvas[i] <= 112u);
+      if (s_fft_canvas[i] == 112u) ++peaks;
     }
     assert(peaks > 0u);
     assert(memcmp(&frame, &original, sizeof(frame)) == 0);
   }
+}
+
+static void test_low_frequency_stays_left_of_high_frequency(void)
+{
+  ScreenDataFrame frame = {0};
+  frame.fft_count = 256u;
+  frame.fft[51] = 50u;
+  frame.fft[204] = 20u;
+  ScreenView_RenderFrame(&frame, SCREEN_MODE_FFT, SCREEN_WAVE_PERIOD_3);
+  assert(s_fft_canvas[88] == 112u);
+  assert(s_fft_canvas[352] == 44u);
+}
+
+static void test_empty_and_single_point_wave(void)
+{
+  ScreenDataFrame frame = {0};
+  const unsigned before = s_wave_addt_count;
+  ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_3);
+  assert(s_wave_addt_count == before);
+  frame.wave_count = 1u;
+  frame.wave[0] = 3072u;
+  ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_3);
+  assert(s_wave_addt_count == before + 1u);
+  assert(s_last_wave_len == 1u);
+  assert(s_wave_canvas[0] == 116u);
 }
 
 int main(void)
@@ -197,6 +222,8 @@ int main(void)
   test_zero_spectrum_uses_bottom_baseline();
   test_last_fft_bin_reaches_right_edge();
   test_each_spectrum_bin_survives_width_mapping();
-  puts("screen_view_tests: PASS (761x161 wave, 441x121 spectrum)");
+  test_low_frequency_stays_left_of_high_frequency();
+  test_empty_and_single_point_wave();
+  puts("screen_view_tests: PASS (dir=0 canvas, 761x161 wave, 441x121 spectrum)");
   return 0;
 }
