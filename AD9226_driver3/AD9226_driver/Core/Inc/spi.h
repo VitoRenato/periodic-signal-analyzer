@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include "stm32f4xx_hal.h"
+#include "acq_frame_tx.h"
 
 /* 命令槽长度:每帧开头 16 字节,用于 H7 向 F407 回传命令 */
 #define ACQ_SPI_CMD_SLOT_BYTES  16U
@@ -27,12 +28,13 @@
  * @brief  通过 SPI1 全双工阻塞交换一帧 8208 B
  * @param  buf   : 样本缓冲指针 (来自 AD9226_GetBuf(), 低 12 bit 有效)
  * @param  n     : 样本数 (e.g. 4096), 必须 ≤ AD9226_SAMPLE_COUNT
- * @param  fs_hz : 当前采样率(Hz), 兼容旧接口,未使用
+ * @param  info  : 帧头信息(标志、本帧 TIM1 分频值、帧序号)
  * @return HAL_OK 成功, HAL_TIMEOUT 握手超时, HAL_ERROR 其他错误
- * @note   一帧总长度 = 16 B 命令槽占位 + 8192 B 样本 = 8208 B
- *         MOSI 发送样本,MISO 同时接收命令槽,命令槽保存在内部缓冲。
+ * @note   一帧总长度 = 16 B 帧头 + 8192 B 样本 = 8208 B
+ *         MOSI 发送帧头和样本,MISO 同时接收命令槽,命令槽保存在内部缓冲。
  */
-HAL_StatusTypeDef AcqSpi_SendSamples(const uint16_t *buf, uint32_t n, uint32_t fs_hz);
+HAL_StatusTypeDef AcqSpi_SendSamples(const uint16_t *buf, uint32_t n,
+                                     const AcqFrameTxInfo *info);
 
 /**
  * @brief  从最近一次 SPI1 全双工帧的命令槽中取出 16 B 命令

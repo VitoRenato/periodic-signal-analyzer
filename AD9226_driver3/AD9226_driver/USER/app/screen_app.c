@@ -16,6 +16,7 @@ static ScreenWavePeriodMode s_wave_periods = (ScreenWavePeriodMode)SCREEN_DEFAUL
 static uint32_t s_last_refresh_ms;
 static uint32_t s_last_status_ms;
 static uint32_t s_rendered_sequence;
+static uint8_t s_remeasure_request;
 uint8_t toggled_indeed = 0;
 
 static void ScreenApp_OnTouch(uint8_t page_id, uint8_t component_id, uint8_t event_type)
@@ -80,12 +81,27 @@ void ScreenApp_ShowMeasurementError(void)
   ScreenView_ShowMeasurementError();
 }
 
+void ScreenApp_ShowMeasuring(void)
+{
+  memset(&s_frame, 0, sizeof(s_frame));
+  s_rendered_sequence = 0u;
+  ScreenView_ShowMeasuring();
+}
+
+uint8_t ScreenApp_TakeRemeasureRequest(void)
+{
+  uint8_t request = s_remeasure_request;
+  s_remeasure_request = 0u;
+  return request;
+}
+
 void ScreenApp_Init(void)
 {
   memset(&s_frame, 0, sizeof(s_frame));
   s_last_refresh_ms = 0u;
   s_last_status_ms = 0u;
   s_rendered_sequence = 0u;
+  s_remeasure_request = 0u;
   s_wave_periods = (ScreenWavePeriodMode)SCREEN_DEFAULT_WAVE_PERIODS;
 
   HMI_Init();
@@ -105,6 +121,12 @@ void ScreenApp_Task(void)
   ScreenKey_Task(now);
   ScreenSpi_Task();
   ScreenI2c_Task();
+
+  if (ScreenKey_TakeLongPress() != 0u)
+  {
+    printf("[KEY] PA15 long press, remeasure\r\n");
+    s_remeasure_request = 1u;
+  }
 
   if (ScreenKey_TakeSinglePress() != 0u)
   {

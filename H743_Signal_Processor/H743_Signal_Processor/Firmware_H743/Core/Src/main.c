@@ -133,17 +133,19 @@ int main(void)
         s_dbg_last_ms = now;
         const ProcessorAppDiagnostics *d = ProcessorApp_GetDiagnostics();
         printf("[H7] rx=%lu proc=%lu fs_sent=%lu "
-               "err=%lu hal_err=0x%lX sig=%d app_err=%d "
-               "cur_fs=%lu req_fs=%lu seq=%lu\r\n",
+               "err=%lu hdr_err=%lu hal_err=0x%lX sig=%d app_err=%d "
+               "cur_fs=%lu req_fs=%lu proc_ms=%lu seq=%lu\r\n",
                (unsigned long)d->frames_received,
                (unsigned long)d->frames_processed,
                (unsigned long)d->set_fs_sent,
                (unsigned long)d->error_count,
+               (unsigned long)d->header_error_count,
                (unsigned long)d->last_hal_error,
                (int)d->last_signal_status,
                (int)d->last_app_error,
                (unsigned long)d->current_sample_rate_Hz,
                (unsigned long)d->last_requested_sample_rate_Hz,
+               (unsigned long)d->last_processing_ms,
                (unsigned long)d->sequence);
     }
   }

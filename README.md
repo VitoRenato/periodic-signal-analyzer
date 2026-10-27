@@ -60,7 +60,7 @@ ctest --test-dir work/component-host --output-on-failure
 
 ## 导出原始码
 
-F407 调试口为 USART1，PA9 是 TX、PA10 是 RX，参数为 921600 baud、8N1。发送 `c` 或 `C` 可获取一帧 4096 点原始码，完整保存 `[CAL12 BEGIN]` 到 `[CAL12 END]` 的内容。
+F407 调试口为 USART1，PA9 是 TX、PA10 是 RX，参数为 921600 baud、8N1。PA15 按键短按切换 1/3 周期，长按 1.5 s 重新测量；串口发送 `m` 同样触发重新测量，发送 `a` 切换自动连续测量。发送 `c` 或 `C` 可获取一帧 4096 点原始码，完整保存 `[CAL12 BEGIN]` 到 `[CAL12 END]` 的内容。
 
 导出后采集冻结，这一帧不送 H743，屏幕保持原状；再次发送 `c` 可重新取帧。返回正常测量时复位 F407，不发送 `c`。正式标定使用原始码，不使用旧 `d` 命令的电压换算列。`fs_hz` 按定时器寄存器推导，不是示波器实测频率。接线和数据格式见[标定说明](AD9226_driver3/AD9226_driver/docs/ADC12_CALIBRATION.md)。
 

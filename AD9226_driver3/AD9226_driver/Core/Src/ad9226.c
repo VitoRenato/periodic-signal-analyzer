@@ -25,6 +25,9 @@ static volatile uint32_t s_eq_f0_hz = 0UL;
 static volatile uint16_t s_eq_divider_req = 0U;  /* 请求值(命令收到即写) */
 static volatile uint16_t s_eq_divider_cap = 0U;  /* 帧启动时捕获的实际 divider */
 
+/* 本帧启动时 TIM1 的分频值 (ARR+1)，随帧头发给 H743 */
+static uint16_t s_frame_divider = 82U;
+
 void AD9226_Init(void)
 {
     s_adc_done = false;
@@ -40,6 +43,8 @@ void AD9226_Start(void)
 {
     s_adc_done = false;
     s_frame_finalized = false;
+
+    s_frame_divider = (uint16_t)(__HAL_TIM_GET_AUTORELOAD(&htim1) + 1U);
 
     /* 等效采样模式下捕获本帧实际使用的 divider(TIM1 ARR+1),
      * 避免命令中途到达导致重建使用错误的 divider。 */
@@ -58,6 +63,19 @@ void AD9226_Start(void)
     }
     /* 使能 TIM1 的更新事件触发 DMA 请求 */
     __HAL_TIM_ENABLE_DMA(&htim1, TIM_DMA_UPDATE);
+}
+
+void AD9226_Abort(void)
+{
+    __HAL_TIM_DISABLE_DMA(&htim1, TIM_DMA_UPDATE);
+    (void)HAL_DMA_Abort(&hdma_tim1_up);
+    s_adc_done = false;
+    s_frame_finalized = false;
+}
+
+uint16_t AD9226_GetFrameDivider(void)
+{
+    return s_frame_divider;
 }
 
 bool AD9226_IsDone(void)
@@ -121,7 +139,8 @@ HAL_StatusTypeDef AD9226_SetSampleRate(uint32_t fs_hz)
     uint32_t pulse = (arr + 1U) / 2U;
     if (pulse > 0) pulse -= 1U;
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint16_t)pulse);
-    s_fs_hz = fs_hz;
+    /* 记录整数分频后的实际采样率，而不是请求值 */
+    s_fs_hz = 168000000UL / (arr + 1U);
     return HAL_OK;
 }
 

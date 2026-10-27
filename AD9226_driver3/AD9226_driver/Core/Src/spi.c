@@ -5,7 +5,7 @@
  *          H723 SPI 从机需要配成同 Mode, 同样 baud rate
  *
  *  一帧传输 = 命令槽(16 B) + 4096 点样本(8192 B) = 8208 B
- *  - F407 MOSI: [16 B 占位][8192 B 样本]
+ *  - F407 MOSI: [16 B 帧头(见 acq_frame_tx.h)][8192 B 样本]
  *  - H723 MISO: [16 B 命令响应][8192 B 占位]
  * 利用 SPI 全双工特性,同时完成"发数据到 H7"和"从 H7 收命令"。
  *
@@ -20,6 +20,7 @@
 #include "spi.h"
 #include "main.h"      /* hspi1, huart1, __io_putchar (printf) */
 #include "ad9226.h"    /* AD9226_SAMPLE_COUNT */
+#include "acq_frame_tx.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -61,11 +62,10 @@ uint32_t AcqSpi_GetReadyTimeoutCount(void)
     return s_ready_timeout_count;
 }
 
-HAL_StatusTypeDef AcqSpi_SendSamples(const uint16_t *buf, uint32_t n, uint32_t fs_hz)
+HAL_StatusTypeDef AcqSpi_SendSamples(const uint16_t *buf, uint32_t n,
+                                     const AcqFrameTxInfo *info)
 {
-    (void)fs_hz;
-
-    if (buf == NULL || n == 0) {
+    if (buf == NULL || n == 0 || info == NULL) {
         return HAL_ERROR;
     }
     if (n > AD9226_SAMPLE_COUNT) {
@@ -78,14 +78,20 @@ HAL_StatusTypeDef AcqSpi_SendSamples(const uint16_t *buf, uint32_t n, uint32_t f
         return rst;
     }
 
-    /* 前 16 B 为命令槽占位(全 0) */
-    memset(s_spi1_tx_buf, 0, ACQ_SPI_CMD_SLOT_BYTES);
-
     /* 屏蔽高 4 位,保证 SPI 数据与技术手册一致:bit 15~12 = 0 */
+    memset(&s_spi1_tx_buf[ACQ_SPI_CMD_SLOT_BYTES], 0, ACQ_SPI_SAMPLE_BYTES);
     for (uint32_t i = 0; i < n; i++) {
         uint16_t sample = buf[i] & 0x0FFFu;
         s_spi1_tx_buf[ACQ_SPI_CMD_SLOT_BYTES + i * 2U + 0] = (uint8_t)(sample & 0xFFu);
         s_spi1_tx_buf[ACQ_SPI_CMD_SLOT_BYTES + i * 2U + 1] = (uint8_t)((sample >> 8) & 0xFFu);
+    }
+
+    /* 前 16 B 为帧头:采样分频、帧序号和样本 CRC,H743 据此校验对齐并取 Fs */
+    if (!AcqFrameTx_Encode(info,
+                           &s_spi1_tx_buf[ACQ_SPI_CMD_SLOT_BYTES],
+                           ACQ_SPI_SAMPLE_BYTES,
+                           s_spi1_tx_buf)) {
+        return HAL_ERROR;
     }
 
     /* SPI1 全双工:同时发送 8208 B 样本并接收 8208 B(含命令槽) */

@@ -155,8 +155,9 @@ void SpiCmd_ProcessRx(const uint8_t *rx_buf, uint32_t len)
         uint32_t old_fs = AD9226_GetSampleRate();
         if (AD9226_SetSampleRate(fs_hz) == HAL_OK) {
             s_ok_cnt++;
-            printf("[CMD] SET_FS: %lu -> %lu Hz, meas f0=%lu Hz vpp=%u mV (%s)\r\n",
-                   (unsigned long)old_fs, (unsigned long)fs_hz,
+            /* 每页结果都捎带 SET_FS;只在实际采样率变化时打印,避免刷屏 */
+            if (AD9226_GetSampleRate() != old_fs) printf("[CMD] SET_FS: %lu -> %lu Hz, meas f0=%lu Hz vpp=%u mV (%s)\r\n",
+                   (unsigned long)old_fs, (unsigned long)AD9226_GetSampleRate(),
                    (unsigned long)s_meas_freq_hz, (unsigned)s_meas_vpp_mv,
                    (s_meas_valid != 0u) ? "valid" : "invalid");
         } else {
@@ -182,6 +183,14 @@ void SpiCmd_ProcessRx(const uint8_t *rx_buf, uint32_t len)
         printf("[CMD] unknown type=0x%02X flags=0x%02X\r\n",
                (unsigned)type, (unsigned)flags);
     }
+}
+
+void SpiCmd_ResetMeasurement(void)
+{
+    s_meas_freq_hz = 0;
+    s_meas_vpp_mv  = 0;
+    s_meas_valid   = 0;
+    H743MeasurementRx_Init(&s_measurement_rx);
 }
 
 uint32_t SpiCmd_GetOkCount(void)  { return s_ok_cnt;  }

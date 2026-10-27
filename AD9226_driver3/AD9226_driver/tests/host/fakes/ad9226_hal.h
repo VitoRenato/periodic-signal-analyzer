@@ -21,6 +21,7 @@ extern GPIO_TypeDef test_gpiof;
 #define __HAL_TIM_DISABLE_DMA(timer, mask) ((timer)->requests &= ~(mask))
 HAL_StatusTypeDef HAL_TIM_PWM_Start(TIM_HandleTypeDef *timer, uint32_t channel);
 HAL_StatusTypeDef HAL_DMA_Start_IT(DMA_HandleTypeDef *dma, uint32_t source, uint32_t destination, uint32_t count);
+HAL_StatusTypeDef HAL_DMA_Abort(DMA_HandleTypeDef *dma);
 void Error_Handler(void);
 
 #endif

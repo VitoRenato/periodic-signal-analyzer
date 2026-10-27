@@ -45,6 +45,12 @@ bool SPI_Links_IsMainReady(void);
 uint32_t SPI_Links_GetLastHalError(void);
 void SPI_Links_AbortAll(void);
 
+/**
+ * @brief 检查进行中的帧接收是否已收到部分字节但停滞超时（例如F407传输中途复位）。
+ *        若尚未收到任何字节，F407可能处于冻结状态，不算超时。
+ */
+bool SPI_Links_HasPartialTransferTimedOut(uint32_t now_ms, uint32_t timeout_ms);
+
 #ifdef __cplusplus
 }
 #endif

@@ -272,3 +272,11 @@ bool H743MeasurementPager_EncodeNext(
     pager->page = (uint8_t)((page + 1U) % H743_MEASUREMENT_PAGE_COUNT);
     return true;
 }
+
+void H743MeasurementPager_Rewind(H743MeasurementPager *pager)
+{
+    if (pager != NULL)
+    {
+        pager->page = 0U;
+    }
+}

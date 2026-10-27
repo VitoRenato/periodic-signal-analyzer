@@ -55,6 +55,7 @@ Core/Src/ad9226.c \
 Core/Src/spi.c \
 Core/Src/spicmd.c \
 Core/Src/equivalent_sampling.c \
+USER/protocol/acq_frame_tx.c \
 USER/protocol/h743_measurement_rx.c \
 USER/protocol/h743_measurement_model.c \
 Core/Src/stm32f4xx_it.c \
@@ -62,9 +63,11 @@ Core/Src/system_stm32f4xx.c \
 Core/Src/stm32f4xx_hal_msp.c \
   USER/app/screen_app.c \
   USER/app/measurement_lock_policy.c \
+  USER/app/measurement_session.c \
   USER/app/screen_signal_model.c \
 USER/app/screen_view.c \
 USER/app/screen_test.c \
+USER/bsp/key_press_detector.c \
 USER/bsp/screen_key.c \
 USER/bsp/screen_spi.c \
 USER/bsp/screen_i2c.c \

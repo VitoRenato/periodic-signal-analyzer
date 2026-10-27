@@ -182,3 +182,53 @@ else()
     )
 endif()
 add_test(NAME ad9226_raw_capture_tests COMMAND ad9226_raw_capture_tests)
+
+add_executable(key_press_detector_tests
+    test_key_press_detector.c
+    ../../USER/bsp/key_press_detector.c
+)
+target_include_directories(key_press_detector_tests PRIVATE
+    ../../USER/bsp
+)
+if(MSVC)
+    target_compile_options(key_press_detector_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(key_press_detector_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+endif()
+add_test(NAME key_press_detector_tests COMMAND key_press_detector_tests)
+
+add_executable(measurement_session_tests
+    test_measurement_session.c
+    ../../USER/app/measurement_lock_policy.c
+    ../../USER/app/measurement_session.c
+)
+target_include_directories(measurement_session_tests PRIVATE
+    ../../USER/app
+    ../../USER/protocol
+)
+if(MSVC)
+    target_compile_options(measurement_session_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(measurement_session_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+endif()
+add_test(NAME measurement_session_tests COMMAND measurement_session_tests)
+
+add_executable(acq_frame_tx_tests
+    test_acq_frame_tx.c
+    ../../USER/protocol/acq_frame_tx.c
+)
+target_include_directories(acq_frame_tx_tests PRIVATE
+    ../../USER/protocol
+)
+if(MSVC)
+    target_compile_options(acq_frame_tx_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(acq_frame_tx_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+endif()
+add_test(NAME acq_frame_tx_tests COMMAND acq_frame_tx_tests)

@@ -277,17 +277,17 @@ void ScreenView_RenderFrame(const ScreenDataFrame *frame, ScreenDisplayMode mode
   }
 }
 
-void ScreenView_ShowMeasurementError(void)
+static void ScreenView_ShowPlaceholder(const char *frequency_text, const char *value_text)
 {
   uint8_t i;
 
   HMI_ClearWave(SCREEN_WAVE_CTRL, 255u);
   HMI_ClearWave(SCREEN_FFT_CTRL, 255u);
-  HMI_SetText("t_f1", "ERR");
+  HMI_SetText("t_f1", frequency_text);
   HMI_SetText("f1_unit", "");
-  HMI_SetText("t_vpp", "---");
+  HMI_SetText("t_vpp", value_text);
   HMI_SetText("vpp_uint", "");
-  HMI_SetText("t_rms", "---");
+  HMI_SetText("t_rms", value_text);
   HMI_SetText("vrms_unit", "");
 
   for (i = 0u; i < 3u; ++i)
@@ -301,9 +301,19 @@ void ScreenView_ShowMeasurementError(void)
     (void)snprintf(peak_obj, sizeof(peak_obj), "v0%u", (unsigned)(i + 1u));
     (void)snprintf(freq_unit_obj, sizeof(freq_unit_obj), "f0%u_unit", (unsigned)(i + 1u));
     (void)snprintf(peak_unit_obj, sizeof(peak_unit_obj), "v0%u_unit", (unsigned)(i + 1u));
-    HMI_SetText(freq_obj, "---");
-    HMI_SetText(peak_obj, "---");
+    HMI_SetText(freq_obj, value_text);
+    HMI_SetText(peak_obj, value_text);
     HMI_SetText(freq_unit_obj, "");
     HMI_SetText(peak_unit_obj, "");
   }
+}
+
+void ScreenView_ShowMeasurementError(void)
+{
+  ScreenView_ShowPlaceholder("ERR", "---");
+}
+
+void ScreenView_ShowMeasuring(void)
+{
+  ScreenView_ShowPlaceholder("...", "...");
 }

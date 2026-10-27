@@ -18,6 +18,9 @@ void ScreenApp_SetDisplayMode(ScreenDisplayMode mode);
 void ScreenApp_SetWavePeriods(ScreenWavePeriodMode periods);
 ScreenWavePeriodMode ScreenApp_GetWavePeriods(void);
 void ScreenApp_ShowMeasurementError(void);
+void ScreenApp_ShowMeasuring(void);
+/* PA15 长按 1.5 s 后置位；取走即清除。 */
+uint8_t ScreenApp_TakeRemeasureRequest(void);
 
 extern uint8_t toggled_indeed;
 

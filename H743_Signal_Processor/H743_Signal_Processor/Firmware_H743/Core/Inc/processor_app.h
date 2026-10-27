@@ -17,7 +17,9 @@ typedef enum
     PROCESSOR_APP_ERROR_SAMPLE_RX_TRANSFER,
     PROCESSOR_APP_ERROR_CMD_TX_START,
     PROCESSOR_APP_ERROR_CMD_TX_TRANSFER,
-    PROCESSOR_APP_ERROR_SET_FS_ENCODE
+    PROCESSOR_APP_ERROR_SET_FS_ENCODE,
+    PROCESSOR_APP_ERROR_FRAME_HEADER,
+    PROCESSOR_APP_ERROR_PARTIAL_TIMEOUT
 } ProcessorAppError;
 
 typedef struct
@@ -26,6 +28,7 @@ typedef struct
     uint32_t frames_processed;
     uint32_t set_fs_sent;
     uint32_t error_count;
+    uint32_t header_error_count;
     uint32_t current_sample_rate_Hz;
     uint32_t last_requested_sample_rate_Hz;
     uint32_t sequence;
@@ -37,6 +40,7 @@ typedef struct
     uint8_t telemetry_page;
     uint8_t telemetry_model_id;
     uint8_t telemetry_frames_remaining;
+    uint8_t last_header_status;
     SignalStatus last_signal_status;
     ProcessorAppError last_app_error;
 } ProcessorAppDiagnostics;

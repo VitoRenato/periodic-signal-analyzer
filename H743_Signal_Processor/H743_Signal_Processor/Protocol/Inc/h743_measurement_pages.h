@@ -43,6 +43,9 @@ bool H743MeasurementPager_EncodeNext(
     H743MeasurementPager *pager,
     uint8_t frame[H743_SET_FS_FRAME_SIZE]);
 
+/** @brief 传输中断后回到第0页重发，避免F407因丢页而拼不齐整组模型。 */
+void H743MeasurementPager_Rewind(H743MeasurementPager *pager);
+
 #ifdef __cplusplus
 }
 #endif

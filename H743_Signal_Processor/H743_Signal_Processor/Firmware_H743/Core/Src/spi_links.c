@@ -28,6 +28,8 @@ static SPI_HandleTypeDef *g_spi;
 static volatile SpiOperation g_active_operation;
 static volatile SpiLinkEvent g_frame_event;
 static volatile uint32_t g_last_hal_error;
+static uint32_t g_transfer_started_ms;
+static uint8_t g_transfer_observed;
 
 /* 让 H7 在挂载 DMA 后有足够时间就绪再拉高 READY，避免 F4 提前起时钟 */
 #define SPI_LINKS_READY_SETUP_DELAY_MS  1U
@@ -69,6 +71,8 @@ HAL_StatusTypeDef SPI_Links_StartFrameExchange(
     SPI_Links_SetAcqReady(GPIO_PIN_RESET);
     g_frame_event = SPI_LINK_EVENT_NONE;
     g_last_hal_error = HAL_SPI_ERROR_NONE;
+    g_transfer_started_ms = 0U;
+    g_transfer_observed = 0U;
     g_active_operation = SPI_OPERATION_FRAME_EXCHANGE;
 
     /* 把命令放在帧首 16 B，其余 8192 B 为占位（已初始化为 0）。 */
@@ -124,6 +128,32 @@ void SPI_Links_AbortAll(void)
 
     g_active_operation = SPI_OPERATION_IDLE;
     g_frame_event = SPI_LINK_EVENT_NONE;
+    g_transfer_observed = 0U;
+}
+
+bool SPI_Links_HasPartialTransferTimedOut(uint32_t now_ms, uint32_t timeout_ms)
+{
+    uint32_t remaining;
+
+    if ((g_spi == NULL)
+        || (g_spi->hdmarx == NULL)
+        || (g_active_operation != SPI_OPERATION_FRAME_EXCHANGE))
+    {
+        return false;
+    }
+
+    remaining = __HAL_DMA_GET_COUNTER(g_spi->hdmarx);
+    if ((remaining == 0U) || (remaining >= SPI_LINKS_FRAME_BYTES))
+    {
+        return false;
+    }
+    if (g_transfer_observed == 0U)
+    {
+        g_transfer_observed = 1U;
+        g_transfer_started_ms = now_ms;
+        return false;
+    }
+    return (now_ms - g_transfer_started_ms) >= timeout_ms;
 }
 
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)

@@ -1,23 +1,18 @@
 #include "screen_key.h"
 
+#include "key_press_detector.h"
 #include "main.h"
 #include "stm32f4xx_hal.h"
 
-#define SCREEN_KEY_DEBOUNCE_MS   30u
-#define SCREEN_KEY_IRQ_GAP_MS   200u   /* 机械抖动/一次按键的最小间隔 */
-
-static uint8_t  s_stable_level;
-static uint8_t  s_last_raw_level;
-static uint8_t  s_single_press;
-static uint32_t s_last_change_ms;
-
+static KeyPressDetector s_detector;
 static volatile uint8_t  s_irq_pending;
-static volatile uint32_t s_last_irq_ms;
-static uint32_t          s_last_press_ms;
+static volatile uint32_t s_irq_edge_ms;
+static uint8_t s_short_press;
+static uint8_t s_long_press;
 
-static uint8_t ScreenKey_ReadSingleRaw(void)
+static bool ScreenKey_ReadPressed(void)
 {
-  return (HAL_GPIO_ReadPin(Single_MCU_GPIO_Port, Single_MCU_Pin) == GPIO_PIN_RESET) ? 1u : 0u;
+  return HAL_GPIO_ReadPin(Single_MCU_GPIO_Port, Single_MCU_Pin) == GPIO_PIN_RESET;
 }
 
 static void ScreenKey_EnableIrq(void)
@@ -39,66 +34,55 @@ static void ScreenKey_EnableIrq(void)
 
 void ScreenKey_Init(void)
 {
-  s_stable_level   = ScreenKey_ReadSingleRaw();
-  s_last_raw_level = s_stable_level;
-  s_single_press   = 0u;
-  s_last_change_ms = 0u;
-
-  s_irq_pending    = 0u;
-  s_last_irq_ms    = 0u;
-  s_last_press_ms  = 0u;
-
+  s_irq_pending = 0u;
+  s_irq_edge_ms = 0u;
+  s_short_press = 0u;
+  s_long_press = 0u;
+  KeyPressDetector_Init(&s_detector, ScreenKey_ReadPressed(), HAL_GetTick());
   ScreenKey_EnableIrq();
 }
 
 void ScreenKey_NotifyIrq(void)
 {
-  uint32_t now = HAL_GetTick();
-  if ((now - s_last_irq_ms) >= SCREEN_KEY_IRQ_GAP_MS)
-  {
-    s_irq_pending = 1u;
-    s_last_irq_ms = now;
-  }
+  /* 中断里只记录下降沿时间，判定全部在主循环完成。 */
+  s_irq_edge_ms = HAL_GetTick();
+  s_irq_pending = 1u;
 }
 
 void ScreenKey_Task(uint32_t now_ms)
 {
-  uint8_t raw = ScreenKey_ReadSingleRaw();
+  bool edge_seen;
+  uint32_t edge_ms;
+  KeyEvent event;
 
-  if (raw != s_last_raw_level)
+  /* 先取走 EXTI 标志再读引脚，避免把正在进行的按下误判成已完成的短按。 */
+  __disable_irq();
+  edge_seen = (s_irq_pending != 0u);
+  edge_ms = s_irq_edge_ms;
+  s_irq_pending = 0u;
+  __enable_irq();
+
+  event = KeyPressDetector_Update(&s_detector, now_ms, ScreenKey_ReadPressed(), edge_seen, edge_ms);
+  if (event == KEY_EVENT_SHORT)
   {
-    s_last_raw_level = raw;
-    s_last_change_ms = now_ms;
-    return;
+    s_short_press = 1u;
   }
-
-  if ((raw != s_stable_level) && ((now_ms - s_last_change_ms) >= SCREEN_KEY_DEBOUNCE_MS))
+  else if (event == KEY_EVENT_LONG)
   {
-    s_stable_level = raw;
-    if (s_stable_level != 0u)
-    {
-      s_single_press = 1u;
-    }
-  }
-
-  /* EXTI 中断捕获：即使主循环被 HMI 长时间阻塞，也能记录按键 */
-  if (s_irq_pending != 0u)
-  {
-    if ((now_ms - s_last_irq_ms) >= SCREEN_KEY_DEBOUNCE_MS)
-    {
-      if ((now_ms - s_last_press_ms) >= SCREEN_KEY_IRQ_GAP_MS)
-      {
-        s_single_press  = 1u;
-        s_last_press_ms = now_ms;
-      }
-      s_irq_pending = 0u;
-    }
+    s_long_press = 1u;
   }
 }
 
 uint8_t ScreenKey_TakeSinglePress(void)
 {
-  uint8_t pressed = s_single_press;
-  s_single_press = 0u;
+  uint8_t pressed = s_short_press;
+  s_short_press = 0u;
+  return pressed;
+}
+
+uint8_t ScreenKey_TakeLongPress(void)
+{
+  uint8_t pressed = s_long_press;
+  s_long_press = 0u;
   return pressed;
 }

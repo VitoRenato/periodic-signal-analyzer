@@ -49,4 +49,7 @@ bool SpiCmd_GetMeasurement(uint32_t *freq_hz, uint16_t *vpp_mv);
 /** @brief 原子复制最近一次完整收到的五页测量模型。 */
 bool SpiCmd_GetMeasurementModel(H743MeasurementModel *model);
 
+/** @brief  丢弃已收到的结果分页和已发布模型(重新测量时调用) */
+void SpiCmd_ResetMeasurement(void);
+
 #endif /* SPICMD_H */

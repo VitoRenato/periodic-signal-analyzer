@@ -1,6 +1,6 @@
 /**
  * @file screen_key.h
- * @brief Single key debounce for waveform-period switching.
+ * @brief PA15 按键：短按切换 1/3 周期，长按 1.5 s 重新测量。
  */
 #ifndef SCREEN_KEY_H
 #define SCREEN_KEY_H
@@ -14,6 +14,7 @@ extern "C" {
 void ScreenKey_Init(void);
 void ScreenKey_Task(uint32_t now_ms);
 uint8_t ScreenKey_TakeSinglePress(void);
+uint8_t ScreenKey_TakeLongPress(void);
 
 /* 由 EXTI15_10_IRQHandler 调用，标记按键按下 */
 void ScreenKey_NotifyIrq(void);

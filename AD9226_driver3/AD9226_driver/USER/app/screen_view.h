@@ -18,6 +18,7 @@ void ScreenView_RenderWavePeriods(const ScreenDataFrame *frame, ScreenWavePeriod
 void ScreenView_SetLinkState(uint8_t linked, uint32_t sequence);
 void ScreenView_RenderFrame(const ScreenDataFrame *frame, ScreenDisplayMode mode, ScreenWavePeriodMode periods);
 void ScreenView_ShowMeasurementError(void);
+void ScreenView_ShowMeasuring(void);
 
 #ifdef __cplusplus
 }

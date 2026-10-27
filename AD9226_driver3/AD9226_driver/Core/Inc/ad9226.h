@@ -13,6 +13,9 @@
 /* 一帧采样数 (G 题 N=4096) */
 #define AD9226_SAMPLE_COUNT  (4096u)
 
+/* 默认采样率: 168 MHz / 82 = 2 048 780 Hz，每轮新测量都从这里开始 */
+#define AD9226_DEFAULT_FS_HZ  (2048780u)
+
 /**
  * @brief  初始化:启动 TIM1 PWM (PE9 出 2.048 MHz) + 配好 DMA 通道
  * @note   调用前需先 MX_TIM1_Init / MX_GPIO_Init / MX_DMA_Init
@@ -28,6 +31,12 @@ void AD9226_Start(void);
 
 /** @brief  查询本次采集是否完成 (非阻塞) */
 bool AD9226_IsDone(void);
+
+/** @brief  中止进行中的采集 (重新测量时使用)，之后可直接再次 Start */
+void AD9226_Abort(void);
+
+/** @brief  最近一次 Start 时 TIM1 的分频值 (ARR+1)，Fs = 168 MHz / 分频值 */
+uint16_t AD9226_GetFrameDivider(void);
 
 /**
  * @brief  保留DMA帧低12位原始ADC码，仅清除GPIO的bit12~bit15

@@ -18,6 +18,7 @@ add_executable(${PROJECT_NAME}
     Core/Src/main.c
     Core/Src/processor_app.c
     Core/Src/processor_telemetry_schedule.c
+    Core/Src/sample_rate_policy.c
     Core/Src/spi_links.c
     Core/Src/syscalls.c
     Core/Src/stm32h7xx_hal_msp.c
@@ -48,6 +49,7 @@ add_executable(${PROJECT_NAME}
     ../Algorithm/Src/orthogonal_fit.c
     ../Algorithm/Src/signal_metrics.c
     ../Algorithm/Src/weak_harmonic_probe.c
+    ../Protocol/Src/acq_frame_header.c
     ../Protocol/Src/h743_crc32.c
     ../Protocol/Src/h743_result_protocol.c
     ../Protocol/Src/h743_set_fs_protocol.c

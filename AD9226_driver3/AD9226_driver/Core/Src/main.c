@@ -26,7 +26,8 @@
 #include "spi.h"
 #include "spicmd.h"
 #include "screen_app.h"
-#include "measurement_lock_policy.h"
+#include "measurement_session.h"
+#include "acq_frame_tx.h"
 #include "screen_protocol.h"
 #include "screen_signal_model.h"
 #include <stdio.h>
@@ -37,12 +38,6 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum
-{
-  MEASUREMENT_ACQUIRING = 0,
-  MEASUREMENT_FROZEN,
-  MEASUREMENT_ERROR
-} MeasurementState;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -79,10 +74,9 @@ volatile uint16_t g_eq_dump_cycles = 0;  /* 'e' 命令:1 或 3,0 表示不 dump 
 volatile uint32_t g_eq_seq = 0;          /* 等效采样波形批次号,每帧重建后 +1 */
 volatile uint32_t g_screen_seq = 0;      /* 串口屏帧序列号,每 ADC 帧 +1 */
 volatile uint8_t  g_hmi_rx_byte = 0;     /* HMI 串口屏 USART2 接收字节 */
-static MeasurementState g_measurement_state = MEASUREMENT_ACQUIRING;
-static uint32_t g_measurement_started_ms = 0u;
-static uint32_t g_last_model_sequence = 0u;
-volatile uint32_t g_measurement_elapsed_ms = 0u;
+static MeasSession g_session;
+static uint32_t g_frame_sequence = 0u;       /* F407 -> H743 样本帧序号,写入帧头 */
+static volatile bool g_remeasure_req = false; /* 'm' 命令:重新测量 */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -156,6 +150,29 @@ static void screen_build_frame(ScreenDataFrame *frame,
                                const int16_t *period,
                                uint32_t seq,
                                uint8_t wave_periods);
+
+/* 新一轮测量:中止采集、回到默认采样率、丢弃旧结果,屏幕显示测量中 */
+static void measurement_rearm(const char *reason)
+{
+    AD9226_Abort();
+    AD9226_ClearEqMode();
+    (void)AD9226_SetSampleRate(AD9226_DEFAULT_FS_HZ);
+    SpiCmd_ResetMeasurement();
+    MeasSession_Rearm(&g_session, HAL_GetTick());
+    ScreenApp_ShowMeasuring();
+    printf("[MEAS] REARM (%s) fs=%lu Hz\r\n",
+           reason, (unsigned long)AD9226_GetSampleRate());
+    AD9226_Start();
+}
+
+static void measurement_show_error(const char *reason)
+{
+    ScreenApp_ShowMeasurementError();
+    printf("[MEAS] ERROR %s elapsed=%lums fs=%lu\r\n",
+           reason,
+           (unsigned long)MeasSession_ElapsedMs(&g_session, HAL_GetTick()),
+           (unsigned long)AD9226_GetSampleRate());
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -240,16 +257,14 @@ int main(void)
   ScreenApp_SetWavePeriods(SCREEN_WAVE_PERIOD_3);
   printf("[2c] ScreenApp_Init OK (USART2 PA2/PA3 -> TJC HMI)\r\n");
   /* 启动第一次 4096 点采集 */
-  g_measurement_state = MEASUREMENT_ACQUIRING;
-  g_measurement_started_ms = HAL_GetTick();
-  g_last_model_sequence = 0u;
-  g_measurement_elapsed_ms = 0u;
+  MeasSession_Init(&g_session, HAL_GetTick());
   AD9226_Start();
   /* 启动 USART2 接收中断 (HMI 串口屏触摸/状态回传) */
   HAL_UART_Receive_IT(&huart2, (uint8_t *)&g_hmi_rx_byte, 1);
   /* 启动 USART1 接收中断(用于接收 PC 端 'd' 命令) */
   HAL_UART_Receive_IT(&huart1, (uint8_t *)&g_uart_rx_byte, 1);
   printf("[3] AD9226_Start OK, entering loop\r\n");
+  printf("[KEY] PA15 short=1/3 periods, long 1.5s=remeasure; UART m=remeasure a=auto repeat\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -263,7 +278,9 @@ int main(void)
      *   'q'/'Q' → 切换 continuous binary 镜像 (默认 ON,关闭后 F407→H7 恢复 500fps)
      *   'p'/'P' → 打印当前一帧 summary(不影响 binary 镜像)
      *   'e'/'E' → 等效采样:输出 1 周期(256 点)重建波形 CSV
-     *   'f'/'F' → 等效采样:输出 3 周期(768 点)重建波形 CSV */
+     *   'f'/'F' → 等效采样:输出 3 周期(768 点)重建波形 CSV
+     *   'm'/'M' → 重新测量(等同 PA15 长按 1.5 s)
+     *   'a'/'A' → 切换自动连续测量:锁定或报错 1 s 后自动重新测量 */
     if (g_uart_rx_flag) {
       g_uart_rx_flag = false;
       uint8_t rxch = g_uart_rx_byte;
@@ -287,6 +304,11 @@ int main(void)
       } else if (rxch == 'f' || rxch == 'F') {
         /* 'f' = dump 等效采样重建后的 3 周期波形 */
         g_eq_dump_cycles = 3U;
+      } else if (rxch == 'm' || rxch == 'M') {
+        g_remeasure_req = true;
+      } else if (rxch == 'a' || rxch == 'A') {
+        MeasSession_SetAutoRepeat(&g_session, !g_session.auto_repeat);
+        printf("[MEAS] auto repeat = %d (a to toggle)\r\n", (int)g_session.auto_repeat);
       }
       /* 接收已在 HAL_UART_RxCpltCallback 中重新启动,这里不需要再开 */
     }
@@ -295,26 +317,31 @@ int main(void)
       g_raw_dump_req = false;
       g_dump_req = false;
       g_eq_dump_cycles = 0U;
-      if (g_measurement_state != MEASUREMENT_ACQUIRING) {
-        if (HAL_DMA_GetState(&hdma_tim1_up) == HAL_DMA_STATE_BUSY) {
-          g_calibration_dump_req = false;
-          printf("[CAL12 ERROR] DMA busy; retry c after capture completes\r\n");
-        } else {
-          g_measurement_state = MEASUREMENT_ACQUIRING;
-          g_measurement_started_ms = HAL_GetTick();
-          AD9226_Start();
-        }
+      MeasSession_SetAutoRepeat(&g_session, false);
+      if (g_session.state != MEAS_SESSION_ACQUIRING) {
+        measurement_rearm("cal");
       }
     }
-    if ((g_measurement_state == MEASUREMENT_ACQUIRING) && AD9226_IsDone()) {
+
+    /* 重新测量:PA15 长按、串口 m、自动连续测量 */
+    {
+      const bool key_request = (ScreenApp_TakeRemeasureRequest() != 0u);
+      const bool uart_request = g_remeasure_req;
+      const bool auto_request = MeasSession_AutoRepeatDue(&g_session, HAL_GetTick());
+
+      g_remeasure_req = false;
+      if (key_request || uart_request || auto_request) {
+        measurement_rearm(key_request ? "key" : (uart_request ? "uart" : "auto"));
+      }
+    }
+
+    if ((g_session.state == MEAS_SESSION_ACQUIRING) && AD9226_IsDone()) {
       /* GPIO bit12~bit15 are unrelated pins; ADC bit0~bit11 stay unchanged. */
       if (!AD9226_FinalizeFrame()) {
         printf("[ADC] frame not complete\r\n");
-        if ((HAL_GetTick() - g_measurement_started_ms) >= 2000u) {
-          g_measurement_state = MEASUREMENT_ERROR;
-          g_measurement_elapsed_ms = HAL_GetTick() - g_measurement_started_ms;
-          ScreenApp_ShowMeasurementError();
-          printf("[MEAS] ERROR capture timeout\r\n");
+        if (MeasSession_ElapsedMs(&g_session, HAL_GetTick()) >= MEAS_SESSION_DEADLINE_MS) {
+          MeasSession_Fail(&g_session, HAL_GetTick());
+          measurement_show_error("capture timeout");
         } else {
           AD9226_Start();
         }
@@ -324,21 +351,27 @@ int main(void)
       uint32_t fs_hz = AD9226_GetSampleRate();
       if (g_calibration_dump_req) {
         g_calibration_dump_req = false;
-        g_measurement_state = MEASUREMENT_FROZEN;
+        MeasSession_Hold(&g_session, HAL_GetTick());
         dump_calibration_csv(buf);
         continue;
       }
 
       /* === 主流程: SPI1 全双工一帧 8208 B, 同时发样本到 H7 并收 H7 命令 ===
-       * 帧格式: [16 B 命令槽][8192 B 样本], 命令槽由 H7 通过 MISO 发回。
-       * 不再喷每帧 summary(用户主动 'p' 才看一帧) */
+       * 帧格式: [16 B 帧头][8192 B 样本], 命令槽由 H7 通过 MISO 发回。
+       * 帧头带本帧 TIM1 分频值、序号和样本 CRC, H7 按帧头里的 Fs 分析。 */
 
       uint8_t cmd_slot[ACQ_SPI_CMD_SLOT_BYTES];
+      const AcqFrameTxInfo frame_info = {
+          MeasSession_FrameFlags(&g_session),
+          AD9226_GetFrameDivider(),
+          ++g_frame_sequence
+      };
       HAL_StatusTypeDef spi_st = AcqSpi_SendSamples(
-          buf, AD9226_SAMPLE_COUNT, fs_hz);
+          buf, AD9226_SAMPLE_COUNT, &frame_info);
       if (spi_st != HAL_OK) {
         printf("[SPI1] frame exchange FAILED st=%d\r\n", (int)spi_st);
       } else {
+        MeasSession_OnExchangeDone(&g_session);
         HAL_StatusTypeDef cmd_st = AcqSpi_RecvCmd(
             cmd_slot, sizeof(cmd_slot));
         if (cmd_st != HAL_OK) {
@@ -381,20 +414,17 @@ int main(void)
         }
       }
 
-      /* 非等效采样模式时,也用 raw ADC 构造一帧给串口屏(优先用 H7 测量基频重建,否则直接抽取) */
       /* 正式显示只接受 H743 拼齐后的模型，不再回退到 raw ADC 波形。 */
       {
         H743MeasurementModel measurement_model;
-        if (SpiCmd_GetMeasurementModel(&measurement_model) &&
-            (measurement_model.published_sequence != g_last_model_sequence))
+        if (SpiCmd_GetMeasurementModel(&measurement_model))
         {
-          const uint32_t elapsed_ms = HAL_GetTick() - g_measurement_started_ms;
+          const uint32_t now_ms = HAL_GetTick();
           const bool displayable = H743MeasurementModel_IsDisplayable(&measurement_model);
-          const MeasurementLockDecision lock_decision = MeasurementLockPolicy_Decide(
-              true, displayable, elapsed_ms, 2000u);
+          const MeasModelDecision decision = MeasSession_OnModel(
+              &g_session, measurement_model.published_sequence, displayable, now_ms);
 
-          g_last_model_sequence = measurement_model.published_sequence;
-          if (lock_decision == MEASUREMENT_LOCK_FREEZE)
+          if (decision == MEAS_MODEL_FREEZE)
           {
             static ScreenDataFrame s_screen_frame;
             g_screen_seq++;
@@ -405,31 +435,50 @@ int main(void)
                 g_screen_seq,
                 (uint8_t)SCREEN_WAVE_PERIOD_3);
             ScreenApp_SetFrame(&s_screen_frame);
-            g_measurement_state = MEASUREMENT_FROZEN;
-            g_measurement_elapsed_ms = HAL_GetTick() - g_measurement_started_ms;
-            printf("[MEAS] LOCK seq=%lu elapsed=%lums f0=%luHz components=%u\r\n",
+            printf("[MEAS] LOCK seq=%lu elapsed=%lums xchg=%lu fs=%lu f0=%luHz "
+                   "upp=%luuV urms=%luuV status=%u flags=0x%02X components=%u\r\n",
                    (unsigned long)measurement_model.published_sequence,
-                   (unsigned long)g_measurement_elapsed_ms,
+                   (unsigned long)MeasSession_ElapsedMs(&g_session, now_ms),
+                   (unsigned long)g_session.exchanges,
+                   (unsigned long)fs_hz,
                    (unsigned long)measurement_model.fundamental_Hz,
+                   (unsigned long)measurement_model.upp_uV,
+                   (unsigned long)measurement_model.urms_uV,
+                   (unsigned)measurement_model.status,
+                   (unsigned)measurement_model.quality_flags,
                    (unsigned)measurement_model.component_count);
+            for (uint8_t k = 0u; k < measurement_model.component_count; ++k)
+            {
+              printf("[MEAS]   comp%u order=%u f=%luHz peak=%luuV\r\n",
+                     (unsigned)(k + 1u),
+                     (unsigned)measurement_model.component[k].order,
+                     (unsigned long)(measurement_model.fundamental_Hz
+                                     * (uint32_t)measurement_model.component[k].order),
+                     (unsigned long)measurement_model.component[k].amplitude_peak_uV);
+            }
           }
-          else if (lock_decision == MEASUREMENT_LOCK_TIMEOUT)
+          else if (decision == MEAS_MODEL_TIMEOUT)
           {
-            g_measurement_state = MEASUREMENT_ERROR;
-            g_measurement_elapsed_ms = HAL_GetTick() - g_measurement_started_ms;
-            ScreenApp_ShowMeasurementError();
-            printf("[MEAS] ERROR status=%u f0=%lu upp=%lu components=%u\r\n",
+            measurement_show_error("model invalid at deadline");
+            printf("[MEAS]   status=%u f0=%lu upp=%lu components=%u\r\n",
                    (unsigned)measurement_model.status,
                    (unsigned long)measurement_model.fundamental_Hz,
                    (unsigned long)measurement_model.upp_uV,
                    (unsigned)measurement_model.component_count);
           }
-          else
+          else if (decision == MEAS_MODEL_STALE)
           {
-            /* H743 上电首轮可能先返回空模型；继续送样，等待下一组有效五页。 */
-            printf("[MEAS] WAIT invalid startup model seq=%lu status=%u\r\n",
+            printf("[MEAS] DROP stale model seq=%lu xchg=%lu\r\n",
                    (unsigned long)measurement_model.published_sequence,
-                   (unsigned)measurement_model.status);
+                   (unsigned long)g_session.exchanges);
+          }
+          else if (decision == MEAS_MODEL_WAIT)
+          {
+            /* H743 首轮或采样率切换中的结果不可显示;继续送样,等待下一组五页。 */
+            printf("[MEAS] WAIT model seq=%lu status=%u fs=%lu\r\n",
+                   (unsigned long)measurement_model.published_sequence,
+                   (unsigned)measurement_model.status,
+                   (unsigned long)fs_hz);
           }
         }
       }
@@ -468,21 +517,17 @@ int main(void)
       }
 
       /* 启下一轮 */
-      if (g_measurement_state == MEASUREMENT_ACQUIRING) {
+      if (g_session.state == MEAS_SESSION_ACQUIRING) {
         AD9226_Start();
       }
     }
 
-    if ((g_measurement_state == MEASUREMENT_ACQUIRING) &&
-        ((HAL_GetTick() - g_measurement_started_ms) >= 2000u)) {
-      g_measurement_state = MEASUREMENT_ERROR;
-      g_measurement_elapsed_ms = HAL_GetTick() - g_measurement_started_ms;
-      ScreenApp_ShowMeasurementError();
-      printf("[MEAS] ERROR response timeout\r\n");
+    if (MeasSession_CheckTimeout(&g_session, HAL_GetTick())) {
+      measurement_show_error("response timeout");
     }
 
-    /* 冻结后p查看当前原始码摘要，c请求新一帧原始码。 */
-    if ((g_measurement_state == MEASUREMENT_FROZEN) && g_print_summary_req) {
+    /* 锁定/报错后 p 查看当前原始码摘要，c 请求新一帧原始码。 */
+    if ((g_session.state != MEAS_SESSION_ACQUIRING) && g_print_summary_req) {
       const uint16_t *buf = AD9226_GetBuf();
       uint16_t mn, mx;
       uint32_t mean;

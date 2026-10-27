@@ -281,3 +281,38 @@ endif()
 add_test(
     NAME processor_telemetry_schedule_tests
     COMMAND processor_telemetry_schedule_tests)
+
+add_executable(acq_frame_header_tests
+    test_acq_frame_header.c
+    ${PROJECT_SOURCE_DIR}/Protocol/Src/acq_frame_header.c
+    ${PROJECT_SOURCE_DIR}/Protocol/Src/h743_crc32.c
+)
+target_include_directories(acq_frame_header_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/Protocol/Inc
+)
+if(MSVC)
+    target_compile_options(acq_frame_header_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(acq_frame_header_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+endif()
+add_test(NAME acq_frame_header_tests COMMAND acq_frame_header_tests)
+
+add_executable(sample_rate_policy_tests
+    test_sample_rate_policy.c
+    ${PROJECT_SOURCE_DIR}/Firmware_H743/Core/Src/sample_rate_policy.c
+)
+target_include_directories(sample_rate_policy_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/Firmware_H743/Core/Inc
+    ${PROJECT_SOURCE_DIR}/Algorithm/Inc
+    ${PROJECT_SOURCE_DIR}/Protocol/Inc
+)
+if(MSVC)
+    target_compile_options(sample_rate_policy_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(sample_rate_policy_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+endif()
+add_test(NAME sample_rate_policy_tests COMMAND sample_rate_policy_tests)

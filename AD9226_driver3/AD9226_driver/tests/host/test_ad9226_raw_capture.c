@@ -31,6 +31,12 @@ HAL_StatusTypeDef HAL_DMA_Start_IT(DMA_HandleTypeDef *dma, uint32_t source,
     return HAL_OK;
 }
 
+HAL_StatusTypeDef HAL_DMA_Abort(DMA_HandleTypeDef *dma)
+{
+    (void)dma;
+    return HAL_OK;
+}
+
 uint16_t EsChooseTimerDivider(uint32_t frequency_hz)
 {
     (void)frequency_hz;
