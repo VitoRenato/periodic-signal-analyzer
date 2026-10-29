@@ -1,8 +1,8 @@
 /**
  * @file    spi.h
  * @brief   F407 与 H743 单 SPI1 全双工通信:
- *         - SPI1 MOSI: F407 → H743 样本 (8208 B)
- *         - SPI1 MISO: F407 ← H743 命令槽 (16 B)
+ *         - SPI1 MOSI: F407 → H743 样本 (8212 B)
+ *         - SPI1 MISO: F407 ← H743 命令槽/测量页 (20 B)
  * @note    MX_SPI1_Init 在 main.c, hspi1 是 main.c 全局
  */
 #ifndef SPI_H
@@ -12,8 +12,8 @@
 #include "stm32f4xx_hal.h"
 #include "acq_frame_tx.h"
 
-/* 命令槽长度:每帧开头 16 字节,用于 H7 向 F407 回传命令 */
-#define ACQ_SPI_CMD_SLOT_BYTES  16U
+/* 命令槽长度:每帧开头 20 字节(v2),用于 H7 向 F407 回传命令/测量页 */
+#define ACQ_SPI_CMD_SLOT_BYTES  22U
 
 /* ===== §3.1 SPI_A_READY 硬件握手 ===== *
  * F407 端 PA4 = H7_READY 输入,H7 拉高后 F407 才发起 SPI1 全双工帧交换
@@ -25,12 +25,12 @@
 #define ACQ_SPI_READY_TIMEOUT_MS  1500U
 
 /**
- * @brief  通过 SPI1 全双工阻塞交换一帧 8208 B
+ * @brief  通过 SPI1 全双工阻塞交换一帧 8212 B
  * @param  buf   : 样本缓冲指针 (来自 AD9226_GetBuf(), 低 12 bit 有效)
  * @param  n     : 样本数 (e.g. 4096), 必须 ≤ AD9226_SAMPLE_COUNT
  * @param  info  : 帧头信息(标志、本帧 TIM1 分频值、帧序号)
  * @return HAL_OK 成功, HAL_TIMEOUT 握手超时, HAL_ERROR 其他错误
- * @note   一帧总长度 = 16 B 帧头 + 8192 B 样本 = 8208 B
+ * @note   一帧总长度 = 20 B 帧头 + 8192 B 样本 = 8212 B
  *         MOSI 发送帧头和样本,MISO 同时接收命令槽,命令槽保存在内部缓冲。
  */
 HAL_StatusTypeDef AcqSpi_SendSamples(const uint16_t *buf, uint32_t n,

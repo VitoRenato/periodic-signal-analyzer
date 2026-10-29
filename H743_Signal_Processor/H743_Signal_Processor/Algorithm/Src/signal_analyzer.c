@@ -27,6 +27,7 @@
 static float g_fit_samples[SIGNAL_FRAME_SAMPLES];
 static float g_spectrum_samples[SIGNAL_FRAME_SAMPLES];
 static uint8_t g_valid_mask[SIGNAL_FRAME_SAMPLES];
+static OrthogonalFitCandidates g_model_candidates;
 
 static void SignalAnalyzer_ResetResult(
     SignalResult *result,
@@ -199,10 +200,12 @@ SignalStatus SignalAnalyzer_Process(
     }
     else
     {
-        if (!HarmonicModel_Select(
-                refined_peaks,
-                candidate_count,
-                &model))
+        if (!OrthogonalFit_PrepareCandidates(
+                g_fit_samples, sample_rate_Hz, refined_peaks,
+                candidate_count, &g_model_candidates)
+            || !HarmonicModel_SelectScored(
+                refined_peaks, candidate_count,
+                OrthogonalFit_ScoreModel, &g_model_candidates, &model))
         {
             result->status = SIGNAL_STATUS_MODEL_INVALID;
             return result->status;
@@ -233,6 +236,8 @@ SignalStatus SignalAnalyzer_Process(
         }
     }
 
+    result->residual_rms_V = (float)fit.residual_rms_V;
+    result->snr_dB = (float)fit.snr_dB;
     if (!SignalMetrics_Populate(&model, &fit, result))
     {
         result->status = SIGNAL_STATUS_MODEL_INVALID;

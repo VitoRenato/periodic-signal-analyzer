@@ -13,11 +13,6 @@ extern "C" {
 #include <stdint.h>
 
 #define MEAS_SESSION_DEADLINE_MS          2000u
-/*
- * 重新测量后，第 1 次交换送出新帧，H743 处理后再用 5 次交换发完五页结果，
- * 所以第 6 次交换之前收齐的结果一定来自旧帧。
- */
-#define MEAS_SESSION_MIN_FRESH_EXCHANGES  6u
 #define MEAS_SESSION_AUTO_REPEAT_MS       1000u
 
 typedef enum
@@ -30,7 +25,6 @@ typedef enum
 typedef enum
 {
   MEAS_MODEL_IGNORED = 0,   /* 非采集状态或重复序号 */
-  MEAS_MODEL_STALE,         /* 重新测量前的帧算出的结果 */
   MEAS_MODEL_WAIT,
   MEAS_MODEL_FREEZE,
   MEAS_MODEL_TIMEOUT
@@ -45,6 +39,12 @@ typedef struct
   uint32_t last_model_sequence;
   uint8_t next_frame_flags;
   bool auto_repeat;
+  /* 已收到可显示的高采样率结果，等最终采样率确定；超时则锁定该结果。 */
+  bool lock_candidate;
+  /* 标定导出后保持当前显示，禁止自动连测重新启动测量。 */
+  bool manual_hold;
+  /* 本轮测量请求代号；同一轮重传不变，新轮次递增。 */
+  uint16_t request_generation;
 } MeasSession;
 
 /* 上电：进入采集，下一帧带 BOOT|REARM 标志。 */
@@ -55,15 +55,31 @@ void MeasSession_Rearm(MeasSession *session, uint32_t now_ms);
 
 uint8_t MeasSession_FrameFlags(const MeasSession *session);
 
-/* 一次 SPI 帧交换成功后调用；帧头标志只随第一帧发送。 */
+/* 本轮请求代号，写入样本帧头并用于匹配 H743 回传。 */
+uint16_t MeasSession_RequestGeneration(const MeasSession *session);
+
+/*
+ * 回传页只有在 F407 至少送出两帧后才可信：同一交换中收到的页是请求前预装的，
+ * 可能属于上一轮。该规则是因果顺序，不是额外延时。
+ */
+bool MeasSession_ResponseTrusted(const MeasSession *session);
+
+/* 一次 SPI 帧交换成功后调用；帧头标志保留到 H743 确认本轮会话。 */
 void MeasSession_OnExchangeDone(MeasSession *session);
 
+/* H743 已接受本轮会话：后续帧不再重复送 BOOT/REARM。 */
+void MeasSession_OnSessionAccepted(MeasSession *session);
+
+/**
+ * @param rate_settled 结果来自最终采样率；高采样率观察阶段的结果只作候选。
+ */
 MeasModelDecision MeasSession_OnModel(MeasSession *session,
                                       uint32_t model_sequence,
                                       bool displayable,
+                                      bool rate_settled,
                                       uint32_t now_ms);
 
-/* 采集状态超时则转入 ERROR 并返回 true。 */
+/* 采集状态超时则转入 ERROR；若已有高采样率候选则锁定候选并转入 FROZEN。 */
 bool MeasSession_CheckTimeout(MeasSession *session, uint32_t now_ms);
 
 /* 采集链路本身失败（例如 ADC 帧不完整）时直接转入 ERROR。 */
@@ -71,6 +87,9 @@ void MeasSession_Fail(MeasSession *session, uint32_t now_ms);
 
 /* 停止采集但不算错误（例如导出标定原始码后保持当前帧）。 */
 void MeasSession_Hold(MeasSession *session, uint32_t now_ms);
+
+/* 标定导出：保持当前显示并抑制自动连测，直到 m/长按重新测量。 */
+void MeasSession_HoldForCalibration(MeasSession *session, uint32_t now_ms);
 
 uint32_t MeasSession_ElapsedMs(const MeasSession *session, uint32_t now_ms);
 

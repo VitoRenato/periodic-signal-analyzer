@@ -25,6 +25,10 @@ typedef struct
     uint8_t recovered;
     uint8_t model_id;
     uint32_t published_sequence;
+    /* 产生本结果的样本帧实际采样率（来自 F407 帧头经 H743 分析后回传）。 */
+    uint32_t analysis_sample_rate_Hz;
+    /* H743 回显的本轮请求代号。 */
+    uint16_t request_generation;
     H743MeasurementComponent component[H743_MEASUREMENT_MAX_COMPONENTS];
 } H743MeasurementModel;
 

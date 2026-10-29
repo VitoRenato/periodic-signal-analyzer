@@ -18,11 +18,12 @@
 static void fill_known_frame(uint8_t frame[ACQ_FRAME_TOTAL_BYTES])
 {
     static const uint8_t known_header[ACQ_FRAME_HEADER_BYTES] = {
-        0xA5U, 0x5AU, 0x01U, 0x03U,
+        0xA5U, 0x5AU, 0x03U, 0x03U,
         0x52U, 0x00U,
         0x07U, 0x00U, 0x00U, 0x00U,
         0x17U, 0xDAU, 0xD5U, 0x7AU,
-        0xA6U, 0x71U
+        0xB7U, 0x2BU,
+        0x01U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U
     };
     size_t i;
 
@@ -47,6 +48,7 @@ static void test_valid_frame_from_f407_vector(void)
     CHECK(header.timer_divider == 82U);
     CHECK(header.sample_rate_Hz == 2048780U);
     CHECK(header.sequence == 7U);
+    CHECK(header.request_generation == 1U);
 }
 
 static void test_corruption_and_misalignment_are_rejected(void)
@@ -59,12 +61,16 @@ static void test_corruption_and_misalignment_are_rejected(void)
     CHECK(AcqFrameHeader_Validate(frame, &header) == ACQ_FRAME_ERR_MAGIC);
 
     fill_known_frame(frame);
-    frame[2] = 99U;
+    frame[2] = 2U;
     CHECK(AcqFrameHeader_Validate(frame, &header) == ACQ_FRAME_ERR_VERSION);
 
     fill_known_frame(frame);
     frame[6] ^= 0x10U;
     CHECK(AcqFrameHeader_Validate(frame, &header) == ACQ_FRAME_ERR_HEADER_CRC);
+
+    fill_known_frame(frame);
+    frame[18] = 1U;
+    CHECK(AcqFrameHeader_Validate(frame, &header) == ACQ_FRAME_ERR_RESERVED);
 
     fill_known_frame(frame);
     frame[ACQ_FRAME_HEADER_BYTES + 100U] ^= 0x01U;
@@ -75,10 +81,21 @@ static void test_corruption_and_misalignment_are_rejected(void)
     CHECK(AcqFrameHeader_Validate(frame, &header) == ACQ_FRAME_ERR_MAGIC);
 }
 
+static void test_sample_crc_starts_after_reserved_bytes(void)
+{
+    uint8_t frame[ACQ_FRAME_TOTAL_BYTES];
+    AcqFrameHeader header;
+
+    fill_known_frame(frame);
+    frame[16] = 0x5AU;
+    CHECK(AcqFrameHeader_Validate(frame, &header) == ACQ_FRAME_ERR_HEADER_CRC);
+}
+
 int main(void)
 {
     test_valid_frame_from_f407_vector();
     test_corruption_and_misalignment_are_rejected();
+    test_sample_crc_starts_after_reserved_bytes();
     puts("acq_frame_header_tests: PASS");
     return 0;
 }

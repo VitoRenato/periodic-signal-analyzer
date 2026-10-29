@@ -141,9 +141,12 @@ static void H743Measurement_ActivatePending(H743MeasurementPager *pager)
 {
     pager->active_result = pager->pending_result;
     pager->active_sample_rate_Hz = pager->pending_sample_rate_Hz;
+    pager->active_analysis_rate_Hz = pager->pending_analysis_rate_Hz;
+    pager->active_request_generation = pager->pending_request_generation;
     pager->pending_valid = 0U;
     pager->active_valid = 1U;
-    pager->model_id = (uint8_t)((pager->model_id + 1U) & 0x07U);
+    pager->model_id = (uint8_t)((pager->model_id + 1U)
+        & H743_MEASUREMENT_MODEL_MASK);
 }
 
 void H743MeasurementPager_Init(H743MeasurementPager *pager)
@@ -151,25 +154,30 @@ void H743MeasurementPager_Init(H743MeasurementPager *pager)
     if (pager != NULL)
     {
         *pager = (H743MeasurementPager){0};
-        pager->model_id = 7U;
+        pager->model_id = H743_MEASUREMENT_MODEL_MASK;
     }
 }
 
 bool H743MeasurementPager_Load(
     H743MeasurementPager *pager,
     const SignalResult *result,
-    uint32_t requested_sample_rate_Hz)
+    uint32_t requested_sample_rate_Hz,
+    uint32_t analysis_sample_rate_Hz,
+    uint16_t request_generation)
 {
     if ((pager == NULL)
         || !H743Measurement_ValidateResult(result)
         || (requested_sample_rate_Hz < H743_SET_FS_MIN_HZ)
-        || (requested_sample_rate_Hz > H743_SET_FS_MAX_REQUEST_HZ))
+        || (requested_sample_rate_Hz > H743_SET_FS_MAX_REQUEST_HZ)
+        || (analysis_sample_rate_Hz == 0U))
     {
         return false;
     }
 
     pager->pending_result = *result;
     pager->pending_sample_rate_Hz = requested_sample_rate_Hz;
+    pager->pending_analysis_rate_Hz = analysis_sample_rate_Hz;
+    pager->pending_request_generation = request_generation;
     pager->pending_valid = 1U;
     if (pager->active_valid == 0U)
     {
@@ -180,6 +188,7 @@ bool H743MeasurementPager_Load(
 
 bool H743MeasurementPager_EncodeNext(
     H743MeasurementPager *pager,
+    bool session_start,
     uint8_t frame[H743_SET_FS_FRAME_SIZE])
 {
     uint8_t payload[6] = {0U};
@@ -254,7 +263,12 @@ bool H743MeasurementPager_EncodeNext(
 
     flags = H743_MEASUREMENT_FLAG_VALID
         | (uint8_t)(page << H743_MEASUREMENT_PAGE_SHIFT)
-        | (uint8_t)(pager->model_id << H743_MEASUREMENT_MODEL_SHIFT);
+        | (uint8_t)((pager->model_id & H743_MEASUREMENT_MODEL_MASK)
+                    << H743_MEASUREMENT_MODEL_SHIFT);
+    if ((page == 0U) && session_start)
+    {
+        flags |= H743_MEASUREMENT_FLAG_SESSION_START;
+    }
     if ((pager->active_result.quality_flags
             & SIGNAL_QUALITY_CLIPPED_MODEL_RECOVERED) != 0U)
     {
@@ -264,6 +278,8 @@ bool H743MeasurementPager_EncodeNext(
     if (!H743SetFsProtocol_EncodePage(
             pager->active_sample_rate_Hz,
             flags,
+            pager->active_request_generation,
+            pager->active_analysis_rate_Hz,
             payload,
             frame))
     {

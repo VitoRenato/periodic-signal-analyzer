@@ -15,11 +15,12 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-#define ACQ_FRAME_HEADER_BYTES       16U
+/* v3: 帧头扩到 22 B；[16..17] 为本轮请求代号，[18..21] 保留零字节。 */
+#define ACQ_FRAME_HEADER_BYTES       22U
 #define ACQ_FRAME_SAMPLE_BYTES       8192U
 #define ACQ_FRAME_TOTAL_BYTES        (ACQ_FRAME_HEADER_BYTES + ACQ_FRAME_SAMPLE_BYTES)
 #define ACQ_FRAME_MAGIC              0x5AA5U
-#define ACQ_FRAME_VERSION            1U
+#define ACQ_FRAME_VERSION            3U
 #define ACQ_FRAME_FLAG_BOOT          0x01U
 #define ACQ_FRAME_FLAG_REARM         0x02U
 #define ACQ_FRAME_TIMER_CLOCK_HZ     168000000U
@@ -36,7 +37,8 @@ typedef enum
     ACQ_FRAME_ERR_VERSION,
     ACQ_FRAME_ERR_HEADER_CRC,
     ACQ_FRAME_ERR_DIVIDER,
-    ACQ_FRAME_ERR_SAMPLE_CRC
+    ACQ_FRAME_ERR_SAMPLE_CRC,
+    ACQ_FRAME_ERR_RESERVED
 } AcqFrameStatus;
 
 typedef struct
@@ -45,6 +47,7 @@ typedef struct
     uint16_t timer_divider;
     uint32_t sample_rate_Hz;
     uint32_t sequence;
+    uint16_t request_generation;
 } AcqFrameHeader;
 
 AcqFrameStatus AcqFrameHeader_Validate(

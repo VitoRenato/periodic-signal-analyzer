@@ -39,4 +39,24 @@ bool OrthogonalFit_RunMasked(
     const HarmonicModel *model,
     OrthogonalFitResult *fit);
 
+#define ORTHOGONAL_CANDIDATE_COLUMNS (1U + 2U * SIGNAL_MAX_CANDIDATES)
+typedef struct
+{
+    double equations[ORTHOGONAL_CANDIDATE_COLUMNS][ORTHOGONAL_CANDIDATE_COLUMNS + 1U];
+    double sample_energy;
+    CztRefinedPeak peaks[SIGNAL_MAX_CANDIDATES];
+    size_t peak_count;
+    size_t interference_index;
+} OrthogonalFitCandidates;
+
+/* One sample pass supplies every candidate's normal equations. */
+bool OrthogonalFit_PrepareCandidates(
+    const float samples[SIGNAL_FRAME_SAMPLES],
+    uint32_t sample_rate_Hz,
+    const CztRefinedPeak peaks[SIGNAL_MAX_CANDIDATES],
+    size_t peak_count,
+    OrthogonalFitCandidates *candidates);
+
+double OrthogonalFit_ScoreModel(const HarmonicModel *model, void *context);
+
 #endif

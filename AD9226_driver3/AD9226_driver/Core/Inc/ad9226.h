@@ -15,6 +15,8 @@
 
 /* 默认采样率: 168 MHz / 82 = 2 048 780 Hz，每轮新测量都从这里开始 */
 #define AD9226_DEFAULT_FS_HZ  (2048780u)
+/* 自动升频目标 10.5 MHz 与默认采样率的分界；高采样率结果只作待定候选。 */
+#define AD9226_HIGH_RATE_THRESHOLD_HZ (5000000u)
 
 /**
  * @brief  初始化:启动 TIM1 PWM (PE9 出 2.048 MHz) + 配好 DMA 通道

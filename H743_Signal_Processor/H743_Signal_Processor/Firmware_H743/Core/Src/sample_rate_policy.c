@@ -59,21 +59,21 @@ uint32_t SampleRatePolicy_Next(
 
     if (SampleRatePolicy_IsHighRate(actual_sample_rate_Hz))
     {
-        if (has_interference)
+        const bool clean_result =
+            (result->status == SIGNAL_STATUS_VALID) && !has_interference;
+
+        if (!clean_result)
         {
             policy->clean_high_rate_frames = 0U;
             return policy->requested_sample_rate_Hz;
         }
 
-        if (result->status == SIGNAL_STATUS_VALID)
+        ++policy->clean_high_rate_frames;
+        if (policy->clean_high_rate_frames >= SAMPLE_RATE_POLICY_CLEAN_FRAMES_TO_REVERT)
         {
-            ++policy->clean_high_rate_frames;
-            if (policy->clean_high_rate_frames >= SAMPLE_RATE_POLICY_CLEAN_FRAMES_TO_REVERT)
-            {
-                policy->clean_high_rate_frames = 0U;
-                policy->reverted_in_session = true;
-                policy->requested_sample_rate_Hz = SAMPLE_RATE_POLICY_DEFAULT_REQUEST_HZ;
-            }
+            policy->clean_high_rate_frames = 0U;
+            policy->reverted_in_session = true;
+            policy->requested_sample_rate_Hz = SAMPLE_RATE_POLICY_DEFAULT_REQUEST_HZ;
         }
         return policy->requested_sample_rate_Hz;
     }

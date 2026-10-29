@@ -1,4 +1,5 @@
 #include "signal_analyzer.h"
+#include "ad9226_calibration.h"
 #include "signal_metrics.h"
 
 #include <math.h>
@@ -9,7 +10,7 @@
 
 #define TEST_PI 3.14159265358979323846
 #define TEST_AD9226_ZERO_CODE 2055L
-#define TEST_AD9226_ADC_V_PER_CODE 0.004921
+#define TEST_AD9226_ADC_V_PER_CODE ((double)AD9226_ADC_V_PER_CODE)
 #define TEST_FRONTEND_AC_GAIN 2.0
 #define TEST_CLIPPED_FIXTURE_SCALE \
     (TEST_AD9226_ADC_V_PER_CODE / 0.005236)

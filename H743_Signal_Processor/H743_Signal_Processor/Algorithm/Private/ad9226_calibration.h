@@ -3,13 +3,12 @@
 
 #include <stdint.h>
 
-/*
- * 当前系数描述 ADC 前端电压，而赛题要求显示 BNC 输入端电压。
- * 板上交流通道增益已经确认为 2 倍，因此所有算法输出统一除以该增益。
- * 0.005236 V/code 仍需通过 BNC 端两点法做最终实板精校。
+/* BNC voltage uses the fixed 2x frontend gain.
+ * The source settings are the contest's nominal references. Bench gain trim:
+ * 0.004921 V/code * 0.98; keep DC zero and sampling timing unchanged.
  */
 #define AD9226_ZERO_CODE          2055
-#define AD9226_ADC_V_PER_CODE     0.004921f
+#define AD9226_ADC_V_PER_CODE     0.00482258f
 #define AD9226_FRONTEND_AC_GAIN   2.0f
 #define AD9226_BNC_V_PER_CODE \
     (AD9226_ADC_V_PER_CODE / AD9226_FRONTEND_AC_GAIN)

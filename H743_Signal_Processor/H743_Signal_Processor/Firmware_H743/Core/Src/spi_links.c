@@ -16,9 +16,9 @@ typedef enum
 } SpiOperation;
 
 /*
- * H7 从机通过 SPI1 全双工与 F4 交换一帧 8208 B：
- *   MOSI (RX): [16 B 命令槽占位][8192 B 样本]
- *   MISO (TX): [16 B SET_FS 命令][8192 B 占位]
+ * H7 从机通过 SPI1 全双工与 F4 交换一帧 8212 B：
+ *   MOSI (RX): [20 B 帧头][8192 B 样本]
+ *   MISO (TX): [20 B SET_FS/测量页][8192 B 占位]
  * TX 缓冲放在 .dma_buffer 段（非缓存 D2 SRAM），与 DMA 视图一致。
  */
 SPI_LINKS_DMA_BUFFER
@@ -75,7 +75,7 @@ HAL_StatusTypeDef SPI_Links_StartFrameExchange(
     g_transfer_observed = 0U;
     g_active_operation = SPI_OPERATION_FRAME_EXCHANGE;
 
-    /* 把命令放在帧首 16 B，其余 8192 B 为占位（已初始化为 0）。 */
+    /* 把命令放在帧首 20 B，其余 8192 B 为占位（已初始化为 0）。 */
     (void)memcpy(s_spi1_tx_frame, tx_cmd, H743_SET_FS_FRAME_SIZE);
 
     status = HAL_SPI_TransmitReceive_DMA(

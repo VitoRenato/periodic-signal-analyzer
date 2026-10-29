@@ -42,16 +42,32 @@ static uint32_t g_failures = 0U;
 
 static void test_known_2048780_hz_frame(void)
 {
-    /* 16 字节命令槽:前 10 字节为 SET_FS 命令,flags=0x01,后 6 字节为 0(未填测量值) */
+    /* 22 字节 v3 命令槽:CRC 覆盖控制字段、请求代号、实际分析采样率/载荷。 */
     static const uint8_t expected[H743_SET_FS_FRAME_SIZE] = {
-        0x5aU, 0xa5U, 0x01U, 0x01U, 0x0cU,
-        0x43U, 0x1fU, 0x00U, 0xfdU, 0x20U,
+        0x5AU, 0xA5U, 0x81U, 0x00U, 0x0CU,
+        0x43U, 0x1FU, 0x00U, 0xE5U, 0x80U,
+        0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
         0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U
     };
     uint8_t frame[H743_SET_FS_FRAME_SIZE] = {0};
 
     CHECK_TRUE(H743SetFsProtocol_Encode(2048780U, frame));
     CHECK_TRUE(memcmp(expected, frame, sizeof(expected)) == 0);
+}
+
+static void test_crc_covers_payload_and_control_fields(void)
+{
+    uint8_t first[H743_SET_FS_FRAME_SIZE];
+    uint8_t second[H743_SET_FS_FRAME_SIZE];
+    static const uint8_t payload_a[6] = {1U, 2U, 3U, 4U, 5U, 6U};
+    static const uint8_t payload_b[6] = {1U, 2U, 3U, 4U, 5U, 7U};
+
+    CHECK_TRUE(H743SetFsProtocol_EncodePage(
+        2048780U, 0x81U, 1U, 2048780U, payload_a, first));
+    CHECK_TRUE(H743SetFsProtocol_EncodePage(
+        2048780U, 0x81U, 1U, 2048780U, payload_b, second));
+    CHECK_TRUE(memcmp(&first[8U], &second[8U], 2U) != 0);
+    CHECK_TRUE(memcmp(&first[10U], &second[10U], 12U) != 0);
 }
 
 static void test_invalid_arguments_leave_output_unchanged(void)
@@ -82,6 +98,7 @@ static void test_actual_rate_uses_f407_integer_divider(void)
 int main(void)
 {
     test_known_2048780_hz_frame();
+    test_crc_covers_payload_and_control_fields();
     test_invalid_arguments_leave_output_unchanged();
     test_actual_rate_uses_f407_integer_divider();
 

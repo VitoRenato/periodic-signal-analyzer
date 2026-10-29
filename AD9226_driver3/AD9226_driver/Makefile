@@ -92,6 +92,8 @@ Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
 Core/Src/sysmem.c \
 Core/Src/syscalls.c
 
+C_SOURCES += USER/app/calibration_export.c USER/app/measurement_stability.c
+
 ASM_SOURCES = \
 Drivers/CMSIS/Device/ST/STM32F4xx/Source/Templates/gcc/startup_stm32f407xx.s
 

@@ -60,6 +60,25 @@ uint16_t AcqFrameTx_Crc16(const uint8_t *data, size_t length)
   return crc;
 }
 
+static uint16_t AcqFrameTx_Crc16Update(uint16_t crc, const uint8_t *data, size_t length)
+{
+  size_t index;
+
+  for (index = 0U; index < length; ++index)
+  {
+    uint8_t bit;
+
+    crc ^= (uint16_t)((uint16_t)data[index] << 8);
+    for (bit = 0U; bit < 8U; ++bit)
+    {
+      crc = ((crc & 0x8000U) != 0U)
+          ? (uint16_t)((uint16_t)(crc << 1) ^ 0x1021U)
+          : (uint16_t)(crc << 1);
+    }
+  }
+  return crc;
+}
+
 bool AcqFrameTx_Encode(const AcqFrameTxInfo *info,
                        const uint8_t *sample_bytes,
                        size_t sample_length,
@@ -77,6 +96,15 @@ bool AcqFrameTx_Encode(const AcqFrameTxInfo *info,
   AcqFrameTx_WriteU16Le(&header[4], info->timer_divider);
   AcqFrameTx_WriteU32Le(&header[6], info->sequence);
   AcqFrameTx_WriteU32Le(&header[10], AcqFrameTx_Crc32(sample_bytes, sample_length));
-  AcqFrameTx_WriteU16Le(&header[14], AcqFrameTx_Crc16(header, 14U));
+  AcqFrameTx_WriteU16Le(&header[16], info->request_generation);
+  header[18] = 0U;
+  header[19] = 0U;
+  header[20] = 0U;
+  header[21] = 0U;
+  {
+    uint16_t crc = AcqFrameTx_Crc16(header, 14U);
+    crc = AcqFrameTx_Crc16Update(crc, &header[16], 2U);
+    AcqFrameTx_WriteU16Le(&header[14], crc);
+  }
   return true;
 }

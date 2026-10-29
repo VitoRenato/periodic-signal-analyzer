@@ -17,6 +17,7 @@ typedef struct
     size_t peak_index[HARMONIC_MAX_DESIRED_TONES];
     double error_Hz;
     double power;
+    double score;
     double base_frequency_Hz;
 } HarmonicChoice;
 
@@ -75,6 +76,8 @@ static int HarmonicModel_IsBetter(
     {
         return 1;
     }
+    if (candidate->score > best->score + HARMONIC_SCORE_EPSILON) return 1;
+    if (candidate->score < best->score - HARMONIC_SCORE_EPSILON) return 0;
     if (candidate->count != best->count)
     {
         return candidate->count > best->count;
@@ -105,6 +108,8 @@ static void HarmonicModel_Consider(
     const size_t peak_index[HARMONIC_MAX_DESIRED_TONES],
     uint8_t count,
     double error_Hz,
+    HarmonicModelScorer scorer,
+    void *context,
     HarmonicChoice *best)
 {
     HarmonicChoice candidate = {0};
@@ -122,6 +127,17 @@ static void HarmonicModel_Consider(
         candidate.power += (double)peaks[peak_index[index]].peak_power;
     }
 
+    if (scorer != NULL)
+    {
+        HarmonicModel model = {.tone_count = count};
+        for (index = 0U; index < (size_t)count; ++index)
+        {
+            model.frequency_Hz[index] = peaks[peak_index[index]].frequency_Hz;
+            model.desired[index] = 1U;
+        }
+        candidate.score = scorer(&model, context);
+        if (!isfinite(candidate.score)) return;
+    }
     if (HarmonicModel_IsBetter(&candidate, best))
     {
         *best = candidate;
@@ -156,6 +172,16 @@ bool HarmonicModel_Select(
     size_t peak_count,
     HarmonicModel *model)
 {
+    return HarmonicModel_SelectScored(peaks, peak_count, NULL, NULL, model);
+}
+
+bool HarmonicModel_SelectScored(
+    const CztRefinedPeak peaks[SIGNAL_MAX_CANDIDATES],
+    size_t peak_count,
+    HarmonicModelScorer scorer,
+    void *context,
+    HarmonicModel *model)
+{
     HarmonicChoice best = {0};
     size_t base_index;
     size_t interference_index = 0U;
@@ -184,7 +210,7 @@ bool HarmonicModel_Select(
             continue;
         }
 
-        HarmonicModel_Consider(peaks, selected, 1U, 0.0, &best);
+        HarmonicModel_Consider(peaks, selected, 1U, 0.0, scorer, context, &best);
         for (first_index = 0U; first_index < peak_count; ++first_index)
         {
             unsigned int first_order;
@@ -208,6 +234,7 @@ bool HarmonicModel_Select(
                 selected,
                 2U,
                 first_error_Hz,
+                scorer, context,
                 &best);
 
             for (second_index = first_index + 1U;
@@ -235,6 +262,7 @@ bool HarmonicModel_Select(
                     selected,
                     3U,
                     first_error_Hz + second_error_Hz,
+                    scorer, context,
                     &best);
             }
         }

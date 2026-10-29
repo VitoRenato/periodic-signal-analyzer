@@ -1,11 +1,12 @@
 #include "signal_analyzer.h"
+#include "ad9226_calibration.h"
 #include "signal_preprocess.h"
 
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
-#define TEST_ADC_V_PER_CODE   0.004921
+#define TEST_ADC_V_PER_CODE   ((double)AD9226_ADC_V_PER_CODE)
 #define TEST_FRONTEND_GAIN    2.0
 #define TEST_BNC_V_PER_CODE   (TEST_ADC_V_PER_CODE / TEST_FRONTEND_GAIN)
 

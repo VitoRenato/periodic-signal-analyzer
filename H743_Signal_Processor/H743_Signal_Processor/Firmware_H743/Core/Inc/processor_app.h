@@ -37,6 +37,8 @@ typedef struct
     uint32_t unrecoverable_clip_count;
     uint32_t frames_skipped_while_paging;
     uint32_t last_processing_ms;
+    uint32_t last_residual_uV;
+    int32_t last_snr_centi_dB;
     uint8_t telemetry_page;
     uint8_t telemetry_model_id;
     uint8_t telemetry_frames_remaining;

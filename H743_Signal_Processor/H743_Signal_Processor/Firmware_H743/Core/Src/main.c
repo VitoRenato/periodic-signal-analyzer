@@ -134,7 +134,7 @@ int main(void)
         const ProcessorAppDiagnostics *d = ProcessorApp_GetDiagnostics();
         printf("[H7] rx=%lu proc=%lu fs_sent=%lu "
                "err=%lu hdr_err=%lu hal_err=0x%lX sig=%d app_err=%d "
-               "cur_fs=%lu req_fs=%lu proc_ms=%lu seq=%lu\r\n",
+               "cur_fs=%lu req_fs=%lu proc_ms=%lu seq=%lu res_uV=%lu snr_cdb=%ld\r\n",
                (unsigned long)d->frames_received,
                (unsigned long)d->frames_processed,
                (unsigned long)d->set_fs_sent,
@@ -146,7 +146,9 @@ int main(void)
                (unsigned long)d->current_sample_rate_Hz,
                (unsigned long)d->last_requested_sample_rate_Hz,
                (unsigned long)d->last_processing_ms,
-               (unsigned long)d->sequence);
+               (unsigned long)d->sequence,
+               (unsigned long)d->last_residual_uV,
+               (long)d->last_snr_centi_dB);
     }
   }
   /* USER CODE END 3 */

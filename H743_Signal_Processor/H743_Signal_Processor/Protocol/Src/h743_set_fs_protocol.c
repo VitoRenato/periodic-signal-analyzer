@@ -3,7 +3,6 @@
 #include <stddef.h>
 
 #define H743_SET_FS_MAGIC 0xa55aU
-#define H743_SET_FS_TYPE 0x01U
 #define H743_SET_FS_TIMER_CLOCK_HZ 168000000U
 
 static void H743SetFsProtocol_WriteU16Le(uint8_t bytes[2], uint16_t value)
@@ -20,11 +19,11 @@ static void H743SetFsProtocol_WriteU32Le(uint8_t bytes[4], uint32_t value)
     bytes[3] = (uint8_t)((value >> 24U) & 0xffU);
 }
 
-static uint16_t H743SetFsProtocol_Crc16CcittFalse(
+static uint16_t H743SetFsProtocol_Crc16Update(
+    uint16_t crc,
     const uint8_t *data,
     size_t length)
 {
-    uint16_t crc = 0xffffU;
     size_t index;
 
     for (index = 0U; index < length; ++index)
@@ -45,6 +44,16 @@ static uint16_t H743SetFsProtocol_Crc16CcittFalse(
         }
     }
     return crc;
+}
+
+static uint16_t H743SetFsProtocol_FrameCrc(const uint8_t *frame)
+{
+    uint16_t crc = H743SetFsProtocol_Crc16Update(0xffffU, frame, 8U);
+
+    return H743SetFsProtocol_Crc16Update(
+        crc,
+        &frame[H743_SET_FS_REQUEST_GEN_OFFSET],
+        12U);
 }
 
 bool H743SetFsProtocol_Encode(
@@ -70,7 +79,9 @@ bool H743SetFsProtocol_EncodeWithMeasurements(
     H743SetFsProtocol_WriteU16Le(&payload[4], vpp_mv);
     return H743SetFsProtocol_EncodePage(
         requested_sample_rate_Hz,
-        0x01U,
+        0x00U,
+        0U,
+        0U,
         payload,
         frame);
 }
@@ -78,6 +89,8 @@ bool H743SetFsProtocol_EncodeWithMeasurements(
 bool H743SetFsProtocol_EncodePage(
     uint32_t requested_sample_rate_Hz,
     uint8_t flags,
+    uint16_t request_generation,
+    uint32_t analysis_sample_rate_Hz,
     const uint8_t payload[6],
     uint8_t frame[H743_SET_FS_FRAME_SIZE])
 {
@@ -97,12 +110,18 @@ bool H743SetFsProtocol_EncodePage(
     encoded[2] = H743_SET_FS_TYPE;
     encoded[3] = flags;
     H743SetFsProtocol_WriteU32Le(&encoded[4], requested_sample_rate_Hz);
-    crc = H743SetFsProtocol_Crc16CcittFalse(encoded, 8U);
-    H743SetFsProtocol_WriteU16Le(&encoded[8], crc);
+    H743SetFsProtocol_WriteU16Le(
+        &encoded[H743_SET_FS_REQUEST_GEN_OFFSET],
+        request_generation);
+    H743SetFsProtocol_WriteU32Le(
+        &encoded[H743_SET_FS_ANALYSIS_RATE_OFFSET],
+        analysis_sample_rate_Hz);
     for (index = 0U; index < 6U; ++index)
     {
-        encoded[10U + index] = payload[index];
+        encoded[H743_SET_FS_PAYLOAD_OFFSET + index] = payload[index];
     }
+    crc = H743SetFsProtocol_FrameCrc(encoded);
+    H743SetFsProtocol_WriteU16Le(&encoded[8], crc);
 
     for (index = 0U; index < H743_SET_FS_FRAME_SIZE; ++index)
     {

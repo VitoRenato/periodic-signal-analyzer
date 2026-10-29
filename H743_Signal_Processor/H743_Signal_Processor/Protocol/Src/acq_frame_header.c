@@ -15,9 +15,11 @@ static uint32_t AcqFrameHeader_ReadU32Le(const uint8_t bytes[4])
         | ((uint32_t)bytes[3] << 24U);
 }
 
-static uint16_t AcqFrameHeader_Crc16(const uint8_t *data, size_t length)
+static uint16_t AcqFrameHeader_Crc16Update(
+    uint16_t crc,
+    const uint8_t *data,
+    size_t length)
 {
-    uint16_t crc = 0xFFFFU;
     size_t index;
 
     for (index = 0U; index < length; ++index)
@@ -33,6 +35,13 @@ static uint16_t AcqFrameHeader_Crc16(const uint8_t *data, size_t length)
         }
     }
     return crc;
+}
+
+static uint16_t AcqFrameHeader_FrameCrc(const uint8_t *frame)
+{
+    const uint16_t crc = AcqFrameHeader_Crc16Update(0xFFFFU, frame, 14U);
+
+    return AcqFrameHeader_Crc16Update(crc, &frame[16U], 2U);
 }
 
 AcqFrameStatus AcqFrameHeader_Validate(
@@ -55,9 +64,14 @@ AcqFrameStatus AcqFrameHeader_Validate(
     {
         return ACQ_FRAME_ERR_VERSION;
     }
-    if (AcqFrameHeader_ReadU16Le(&frame[14U]) != AcqFrameHeader_Crc16(frame, 14U))
+    if (AcqFrameHeader_ReadU16Le(&frame[14U]) != AcqFrameHeader_FrameCrc(frame))
     {
         return ACQ_FRAME_ERR_HEADER_CRC;
+    }
+    if ((frame[18U] != 0U) || (frame[19U] != 0U)
+        || (frame[20U] != 0U) || (frame[21U] != 0U))
+    {
+        return ACQ_FRAME_ERR_RESERVED;
     }
 
     divider = AcqFrameHeader_ReadU16Le(&frame[4U]);
@@ -79,5 +93,6 @@ AcqFrameStatus AcqFrameHeader_Validate(
     out->timer_divider = divider;
     out->sample_rate_Hz = ACQ_FRAME_TIMER_CLOCK_HZ / (uint32_t)divider;
     out->sequence = AcqFrameHeader_ReadU32Le(&frame[6U]);
+    out->request_generation = AcqFrameHeader_ReadU16Le(&frame[16U]);
     return ACQ_FRAME_OK;
 }

@@ -94,10 +94,40 @@ static void test_low_fundamental_stays_at_default_rate(void)
           == SAMPLE_RATE_POLICY_DEFAULT_REQUEST_HZ);
 }
 
+static void test_nonconsecutive_clean_frames_do_not_revert(void)
+{
+    SampleRatePolicy policy;
+    SignalResult result;
+
+    SampleRatePolicy_Init(&policy);
+    result = make_result(
+        SIGNAL_STATUS_SAMPLE_RATE_UNSAFE,
+        100000.0f,
+        SAMPLE_RATE_POLICY_HIGH_REQUEST_HZ,
+        SIGNAL_QUALITY_INTERFERENCE_REMOVED);
+    CHECK(SampleRatePolicy_Next(&policy, 2048780U, &result)
+          == SAMPLE_RATE_POLICY_HIGH_REQUEST_HZ);
+
+    /* 10 MHz 下：valid, no_signal, valid, valid 必须重新计数。 */
+    result = make_result(SIGNAL_STATUS_VALID, 100000.0f, 0U, 0U);
+    CHECK(SampleRatePolicy_Next(&policy, 10500000U, &result)
+          == SAMPLE_RATE_POLICY_HIGH_REQUEST_HZ);
+    result = make_result(SIGNAL_STATUS_NO_SIGNAL, 0.0f, 0U, 0U);
+    CHECK(SampleRatePolicy_Next(&policy, 10500000U, &result)
+          == SAMPLE_RATE_POLICY_HIGH_REQUEST_HZ);
+    result = make_result(SIGNAL_STATUS_VALID, 100000.0f, 0U, 0U);
+    CHECK(SampleRatePolicy_Next(&policy, 10500000U, &result)
+          == SAMPLE_RATE_POLICY_HIGH_REQUEST_HZ);
+    CHECK(SampleRatePolicy_Next(&policy, 10500000U, &result)
+          == SAMPLE_RATE_POLICY_HIGH_REQUEST_HZ);
+    CHECK(!policy.reverted_in_session);
+}
+
 int main(void)
 {
     test_step_up_revert_and_no_oscillation_in_same_session();
     test_low_fundamental_stays_at_default_rate();
+    test_nonconsecutive_clean_frames_do_not_revert();
     puts("sample_rate_policy_tests: PASS");
     return 0;
 }

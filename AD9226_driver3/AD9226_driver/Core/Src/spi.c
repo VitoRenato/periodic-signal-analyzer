@@ -4,9 +4,9 @@
  * @note    SPI1 配 8 bit / 5.25 MHz / Mode 0 / MSB first
  *          H723 SPI 从机需要配成同 Mode, 同样 baud rate
  *
- *  一帧传输 = 命令槽(16 B) + 4096 点样本(8192 B) = 8208 B
- *  - F407 MOSI: [16 B 帧头(见 acq_frame_tx.h)][8192 B 样本]
- *  - H723 MISO: [16 B 命令响应][8192 B 占位]
+ *  一帧传输 = 20 B 帧头 + 4096 点样本(8192 B) = 8212 B
+ *  - F407 MOSI: [20 B 帧头(见 acq_frame_tx.h)][8192 B 样本]
+ *  - H743 MISO: [20 B 命令响应/测量页][8192 B 占位]
  * 利用 SPI 全双工特性,同时完成"发数据到 H7"和"从 H7 收命令"。
  *
  *  §3.1 SPI_A_READY 硬件握手:
@@ -86,7 +86,7 @@ HAL_StatusTypeDef AcqSpi_SendSamples(const uint16_t *buf, uint32_t n,
         s_spi1_tx_buf[ACQ_SPI_CMD_SLOT_BYTES + i * 2U + 1] = (uint8_t)((sample >> 8) & 0xFFu);
     }
 
-    /* 前 16 B 为帧头:采样分频、帧序号和样本 CRC,H743 据此校验对齐并取 Fs */
+    /* 前 20 B 为帧头:采样分频、帧序号和样本 CRC,H743 据此校验对齐并取 Fs */
     if (!AcqFrameTx_Encode(info,
                            &s_spi1_tx_buf[ACQ_SPI_CMD_SLOT_BYTES],
                            ACQ_SPI_SAMPLE_BYTES,
@@ -94,7 +94,7 @@ HAL_StatusTypeDef AcqSpi_SendSamples(const uint16_t *buf, uint32_t n,
         return HAL_ERROR;
     }
 
-    /* SPI1 全双工:同时发送 8208 B 样本并接收 8208 B(含命令槽) */
+    /* SPI1 全双工:同时发送 8212 B 样本并接收 8212 B(含命令槽) */
     HAL_StatusTypeDef st = HAL_SPI_TransmitReceive(&hspi1,
                                                     s_spi1_tx_buf,
                                                     s_spi1_rx_buf,

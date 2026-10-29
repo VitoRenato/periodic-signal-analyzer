@@ -11,9 +11,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SPICMD_FRAME_LEN  16U   /* 命令槽总长 16 字节，前 10 字节为命令，后 6 字节可捎带测量值 */
+#define SPICMD_FRAME_LEN  22U   /* v3 命令槽：控制字段 + 请求代号 + 实际采样率 + 测量页载荷 */
 #define SPICMD_MAGIC      0xA55AU
-#define SPICMD_TYPE_SET_FS    0x01U
+#define SPICMD_TYPE_SET_FS    0x81U
 #define SPICMD_TYPE_SET_EQ_F0 0x02U   /* 等效采样:payload = 基频 f0(Hz) */
 
 static volatile uint32_t s_ok_cnt  = 0;
@@ -24,11 +24,10 @@ static volatile uint8_t  s_meas_valid   = 0;
 static H743MeasurementRx s_measurement_rx;
 
 /* ---- CRC16/CCITT-FALSE:poly=0x1021 init=0xFFFF refin=false refout=false xorout=0x0000 ----
- * 仅覆盖 payload[0..7],输出 2 字节小端
+ * 覆盖 [0..7] 与 [10..21]，输出 2 字节小端；与 H743 编码端一致。
  */
-static uint16_t crc16_ccitt_false(const uint8_t *data, uint32_t len)
+static uint16_t crc16_update(uint16_t crc, const uint8_t *data, uint32_t len)
 {
-    uint16_t crc = 0xFFFFU;
     for (uint32_t i = 0; i < len; i++) {
         crc ^= ((uint16_t)data[i]) << 8;
         for (uint32_t b = 0; b < 8; b++) {
@@ -37,6 +36,13 @@ static uint16_t crc16_ccitt_false(const uint8_t *data, uint32_t len)
         }
     }
     return crc;
+}
+
+static uint16_t spicmd_frame_crc(const uint8_t *frame)
+{
+    uint16_t crc = crc16_update(0xFFFFU, frame, 8U);
+
+    return crc16_update(crc, &frame[10], 12U);
 }
 
 void SpiCmd_Init(void)
@@ -99,7 +105,7 @@ void SpiCmd_ProcessRx(const uint8_t *rx_buf, uint32_t len)
                       | ((uint32_t)rx_buf[off + 6] << 16)
                       | ((uint32_t)rx_buf[off + 7] << 24);
     uint16_t crc_rx   = (uint16_t)rx_buf[off + 8] | ((uint16_t)rx_buf[off + 9] << 8);
-    uint16_t crc_calc = crc16_ccitt_false(&rx_buf[off], 8);
+    uint16_t crc_calc = spicmd_frame_crc(&rx_buf[off]);
 
     bool frame_ok = (magic == SPICMD_MAGIC) && (crc_rx == crc_calc);
 
@@ -216,4 +222,15 @@ bool SpiCmd_GetMeasurement(uint32_t *freq_hz, uint16_t *vpp_mv)
 bool SpiCmd_GetMeasurementModel(H743MeasurementModel *model)
 {
     return H743MeasurementRx_GetPublished(&s_measurement_rx, model);
+}
+
+bool SpiCmd_TakeSessionStart(void)
+{
+    return H743MeasurementRx_TakeSessionStart(&s_measurement_rx);
+}
+
+void SpiCmd_SetRequestGeneration(uint16_t request_generation)
+{
+    H743MeasurementRx_SetRequestGeneration(&s_measurement_rx,
+                                           request_generation);
 }

@@ -446,3 +446,104 @@ bool OrthogonalFit_RunMasked(
         coefficients,
         fit) != 0;
 }
+
+
+bool OrthogonalFit_PrepareCandidates(
+    const float samples[SIGNAL_FRAME_SAMPLES],
+    uint32_t sample_rate_Hz,
+    const CztRefinedPeak peaks[SIGNAL_MAX_CANDIDATES],
+    size_t peak_count,
+    OrthogonalFitCandidates *candidates)
+{
+    if (samples == NULL || peaks == NULL || candidates == NULL
+        || sample_rate_Hz == 0U || peak_count == 0U
+        || peak_count > SIGNAL_MAX_CANDIDATES) return false;
+    *candidates = (OrthogonalFitCandidates){0};
+    candidates->peak_count = peak_count;
+    candidates->interference_index = SIZE_MAX;
+    const size_t columns = 1U + 2U * peak_count;
+    double strongest_interference = 0.0;
+    for (size_t k = 0U; k < peak_count; ++k)
+    {
+        candidates->peaks[k] = peaks[k];
+        if (peaks[k].valid && isfinite(peaks[k].frequency_Hz)
+            && peaks[k].frequency_Hz >= 1000000.0f
+            && peaks[k].frequency_Hz < 0.5f * sample_rate_Hz
+            && peaks[k].peak_power > strongest_interference)
+        {
+            strongest_interference = peaks[k].peak_power;
+            candidates->interference_index = k;
+        }
+    }
+    for (size_t i = 0U; i < SIGNAL_FRAME_SAMPLES; ++i)
+    {
+        const double sample = samples[i];
+        double basis[ORTHOGONAL_CANDIDATE_COLUMNS] = {1.0};
+        if (!isfinite(sample)) return false;
+        for (size_t k = 0U; k < peak_count; ++k)
+        {
+            const double frequency = peaks[k].frequency_Hz;
+            if (!peaks[k].valid || !isfinite(frequency)
+                || frequency <= 0.0 || frequency >= 0.5 * sample_rate_Hz) continue;
+            const double angle = 2.0 * ORTHOGONAL_FIT_PI * frequency * (double)i / sample_rate_Hz;
+            basis[1U + 2U*k] = cos(angle);
+            basis[2U + 2U*k] = sin(angle);
+        }
+        candidates->sample_energy += sample * sample;
+        for (size_t row = 0U; row < columns; ++row)
+        {
+            candidates->equations[row][columns] += basis[row] * sample;
+            for (size_t col = 0U; col <= row; ++col)
+                candidates->equations[row][col] += basis[row] * basis[col];
+        }
+    }
+    for (size_t row = 0U; row < columns; ++row)
+        for (size_t col = row + 1U; col < columns; ++col)
+            candidates->equations[row][col] = candidates->equations[col][row];
+    return true;
+}
+
+double OrthogonalFit_ScoreModel(const HarmonicModel *model, void *context)
+{
+    const OrthogonalFitCandidates *candidates = context;
+    if (model == NULL || candidates == NULL || model->tone_count == 0U
+        || model->tone_count > SIGNAL_MAX_COMPONENTS) return -INFINITY;
+    size_t map[ORTHOGONAL_FIT_MAX_COLUMNS] = {0U};
+    size_t columns = 1U;
+    for (size_t tone = 0U; tone < model->tone_count; ++tone)
+    {
+        size_t k;
+        for (k = 0U; k < candidates->peak_count; ++k)
+            if (candidates->peaks[k].valid
+                && candidates->peaks[k].frequency_Hz == model->frequency_Hz[tone]) break;
+        if (k == candidates->peak_count) return -INFINITY;
+        map[columns++] = 1U + 2U*k;
+        map[columns++] = 2U + 2U*k;
+    }
+    /* The same strongest out-of-band tone is fitted for every candidate. */
+    if (candidates->interference_index != SIZE_MAX)
+    {
+        map[columns++] = 1U + 2U*candidates->interference_index;
+        map[columns++] = 2U + 2U*candidates->interference_index;
+    }
+    double augmented[ORTHOGONAL_FIT_MAX_COLUMNS][ORTHOGONAL_FIT_MAX_COLUMNS + 1U] = {{0}};
+    double coefficients[ORTHOGONAL_FIT_MAX_COLUMNS] = {0};
+    double rhs[ORTHOGONAL_FIT_MAX_COLUMNS] = {0};
+    double pivot_ratio;
+    const size_t all_columns = 1U + 2U*candidates->peak_count;
+    for (size_t row = 0U; row < columns; ++row)
+    {
+        rhs[row] = candidates->equations[map[row]][all_columns];
+        augmented[row][columns] = rhs[row];
+        for (size_t col = 0U; col < columns; ++col)
+            augmented[row][col] = candidates->equations[map[row]][map[col]];
+    }
+    if (!OrthogonalFit_Solve(augmented, columns, coefficients, &pivot_ratio)) return -INFINITY;
+    double residual = candidates->sample_energy;
+    for (size_t row = 0U; row < columns; ++row) residual -= coefficients[row] * rhs[row];
+    const double floor_energy = fmax(candidates->sample_energy * 1.0e-12, 1.0e-24);
+    const double residual_power = fmax(residual, floor_energy) / SIGNAL_FRAME_SAMPLES;
+    /* BIC balances explained energy against extra fitted coefficients. */
+    return -log(residual_power)
+        - (double)columns * log((double)SIGNAL_FRAME_SAMPLES) / SIGNAL_FRAME_SAMPLES;
+}

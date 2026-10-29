@@ -54,11 +54,18 @@ static AcqFrameHeader g_current_header;
 static H743MeasurementPager g_measurement_pager;
 static ProcessorTelemetrySchedule g_telemetry_schedule;
 static SampleRatePolicy g_sample_rate_policy;
+static uint32_t g_last_sequence;
+static uint16_t g_last_request_generation;
+static uint8_t g_have_last_request_generation;
+static uint8_t g_have_last_sequence;
+static uint8_t g_last_frame_new_session;
+static uint8_t g_new_session_unacked;
 
 static bool ProcessorApp_EncodeNextTelemetry(void)
 {
     if (!H743MeasurementPager_EncodeNext(
             &g_measurement_pager,
+            (g_new_session_unacked != 0U),
             g_dma_set_fs_frame))
     {
         return false;
@@ -79,23 +86,17 @@ static void ProcessorApp_RecordError(ProcessorAppError error)
 
 static void ProcessorApp_RewindTelemetry(void)
 {
-    if (g_measurement_pager.active_valid != 0U)
-    {
-        H743MeasurementPager_Rewind(&g_measurement_pager);
-        (void)ProcessorApp_EncodeNextTelemetry();
-        ProcessorTelemetrySchedule_Start(
-            &g_telemetry_schedule,
-            H743_MEASUREMENT_PAGE_COUNT);
-    }
-    else
-    {
-        ProcessorTelemetrySchedule_Init(&g_telemetry_schedule);
-        (void)H743SetFsProtocol_Encode(
-            g_diagnostics.last_requested_sample_rate_Hz,
-            g_dma_set_fs_frame);
-    }
-    g_diagnostics.telemetry_frames_remaining =
-        ProcessorTelemetrySchedule_Remaining(&g_telemetry_schedule);
+    /*
+     * 出错后不再重发上一轮的旧模型：旧页可能被 F407 误认成新一轮确认。
+     * 丢弃分页，先只回 SET_FS；下一帧有效样本重新分析后再出模型。
+     */
+    H743MeasurementPager_Init(&g_measurement_pager);
+    ProcessorTelemetrySchedule_Init(&g_telemetry_schedule);
+    (void)H743SetFsProtocol_Encode(
+        g_diagnostics.last_requested_sample_rate_Hz,
+        g_dma_set_fs_frame);
+    g_diagnostics.telemetry_frames_remaining = 0U;
+    g_diagnostics.telemetry_page = 0U;
 }
 
 static void ProcessorApp_EnterRecovery(ProcessorAppError error)
@@ -116,6 +117,7 @@ static void ProcessorApp_OnNewSessionFrame(void)
     g_diagnostics.telemetry_frames_remaining = 0U;
     g_diagnostics.last_requested_sample_rate_Hz =
         PROCESSOR_APP_DEFAULT_REQUEST_HZ;
+    g_new_session_unacked = 1U;
 }
 
 void ProcessorApp_Init(SPI_HandleTypeDef *spi)
@@ -125,6 +127,12 @@ void ProcessorApp_Init(SPI_HandleTypeDef *spi)
     (void)memset(g_dma_set_fs_frame, 0, sizeof(g_dma_set_fs_frame));
     (void)memset(&g_current_header, 0, sizeof(g_current_header));
     g_waiting_resync = 0U;
+    g_last_sequence = 0U;
+    g_last_request_generation = 0U;
+    g_have_last_request_generation = 0U;
+    g_have_last_sequence = 0U;
+    g_last_frame_new_session = 0U;
+    g_new_session_unacked = 0U;
     H743MeasurementPager_Init(&g_measurement_pager);
     ProcessorTelemetrySchedule_Init(&g_telemetry_schedule);
     SampleRatePolicy_Init(&g_sample_rate_policy);
@@ -196,9 +204,38 @@ void ProcessorApp_RunOnce(void)
                 ++g_diagnostics.frames_received;
                 g_diagnostics.current_sample_rate_Hz =
                     g_current_header.sample_rate_Hz;
-                if (AcqFrameHeader_IsNewSession(&g_current_header))
                 {
-                    ProcessorApp_OnNewSessionFrame();
+                    const bool new_session =
+                        AcqFrameHeader_IsNewSession(&g_current_header);
+                    const bool sequence_regressed =
+                        (g_have_last_sequence != 0U)
+                        && ((int32_t)(g_current_header.sequence
+                                      - g_last_sequence) <= 0);
+                    const bool request_changed =
+                        (g_have_last_request_generation == 0U)
+                        || (g_current_header.request_generation
+                            != g_last_request_generation);
+
+                    /*
+                     * 同一请求代号的 REARM 是重传，保持幂等；代号变化或
+                     * 序号回退（F407 单独复位）才是真正的新一轮。
+                     */
+                    if (new_session
+                        && (request_changed || sequence_regressed
+                            || (g_last_frame_new_session == 0U)))
+                    {
+                        ProcessorApp_OnNewSessionFrame();
+                    }
+                    if (!new_session)
+                    {
+                        g_new_session_unacked = 0U;
+                    }
+                    g_last_frame_new_session = new_session ? 1U : 0U;
+                    g_last_request_generation =
+                        g_current_header.request_generation;
+                    g_have_last_request_generation = 1U;
+                    g_last_sequence = g_current_header.sequence;
+                    g_have_last_sequence = 1U;
                 }
 
                 {
@@ -257,6 +294,8 @@ void ProcessorApp_RunOnce(void)
                 &result);
             g_diagnostics.last_processing_ms =
                 HAL_GetTick() - processing_started_ms;
+            g_diagnostics.last_residual_uV = (uint32_t)(result.residual_rms_V * 1000000.0f);
+            g_diagnostics.last_snr_centi_dB = (int32_t)(result.snr_dB * 100.0f);
             ++g_diagnostics.frames_processed;
             ++g_diagnostics.sequence;
 
@@ -278,7 +317,9 @@ void ProcessorApp_RunOnce(void)
             if (!H743MeasurementPager_Load(
                     &g_measurement_pager,
                     &result,
-                    pending_request_Hz)
+                    pending_request_Hz,
+                    sample_rate_Hz,
+                    g_current_header.request_generation)
                 || !ProcessorApp_EncodeNextTelemetry())
             {
                 ProcessorApp_EnterRecovery(

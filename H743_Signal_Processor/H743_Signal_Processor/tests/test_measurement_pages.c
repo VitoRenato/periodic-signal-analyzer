@@ -49,6 +49,12 @@ static uint32_t read_u32_le(const uint8_t bytes[4])
         | ((uint32_t)bytes[3] << 24U);
 }
 
+static uint8_t model_id_of(uint8_t flags)
+{
+    return (uint8_t)((flags >> H743_MEASUREMENT_MODEL_SHIFT)
+        & H743_MEASUREMENT_MODEL_MASK);
+}
+
 static void test_five_pages_share_one_model_snapshot(void)
 {
     SignalResult result = {0};
@@ -71,36 +77,39 @@ static void test_five_pages_share_one_model_snapshot(void)
         (float)(-0.5 * TEST_PI)};
 
     H743MeasurementPager_Init(&pager);
-    CHECK_TRUE(H743MeasurementPager_Load(&pager, &result, 2048780U));
+    CHECK_TRUE(H743MeasurementPager_Load(
+        &pager, &result, 2048780U, 2048780U, 1U));
 
     for (page = 0U; page < H743_MEASUREMENT_PAGE_COUNT; ++page)
     {
         uint8_t flags;
 
-        CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, frame));
+        CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, false, frame));
         flags = frame[3U];
         CHECK_TRUE((flags & H743_MEASUREMENT_FLAG_VALID) != 0U);
         CHECK_TRUE((flags & H743_MEASUREMENT_FLAG_RECOVERED) != 0U);
+        CHECK_TRUE((flags & H743_MEASUREMENT_FLAG_SESSION_START) == 0U);
         CHECK_U32(page, (flags >> H743_MEASUREMENT_PAGE_SHIFT) & 0x07U);
+        CHECK_U32(1U, read_u16_le(&frame[10U]));
+        CHECK_U32(2048780U, read_u32_le(&frame[12U]));
         if (page == 0U)
         {
-            model_id = (uint8_t)(flags >> H743_MEASUREMENT_MODEL_SHIFT);
-            CHECK_U32(100000U, read_u32_le(&frame[10U]));
-            CHECK_U32(250U, read_u16_le(&frame[14U]));
+            model_id = model_id_of(flags);
+            CHECK_U32(100000U, read_u32_le(&frame[16U]));
+            CHECK_U32(250U, read_u16_le(&frame[20U]));
         }
         else
         {
-            CHECK_U32(model_id,
-                (uint8_t)(flags >> H743_MEASUREMENT_MODEL_SHIFT));
+            CHECK_U32(model_id, model_id_of(flags));
         }
 
         if (page == 1U)
         {
-            CHECK_U32(88U, read_u16_le(&frame[10U]));
-            CHECK_U32(3U, frame[12U]);
-            CHECK_U32(SIGNAL_STATUS_VALID, frame[13U]);
-            CHECK_U32(result.quality_flags, frame[14U]);
-            CHECK_U32(0U, frame[15U]);
+            CHECK_U32(88U, read_u16_le(&frame[16U]));
+            CHECK_U32(3U, frame[18U]);
+            CHECK_U32(SIGNAL_STATUS_VALID, frame[19U]);
+            CHECK_U32(result.quality_flags, frame[20U]);
+            CHECK_U32(0U, frame[21U]);
         }
         else if (page >= 2U)
         {
@@ -113,13 +122,40 @@ static void test_five_pages_share_one_model_snapshot(void)
             };
             const size_t component = page - 2U;
 
-            CHECK_U32(expected_order[component], frame[10U]);
+            CHECK_U32(expected_order[component], frame[16U]);
             CHECK_U32(expected_amplitude_mV[component],
-                read_u16_le(&frame[11U]));
+                read_u16_le(&frame[17U]));
             CHECK_U32((uint16_t)expected_phase_q15[component],
-                read_u16_le(&frame[13U]));
-            CHECK_U32(1U, frame[15U]);
+                read_u16_le(&frame[19U]));
+            CHECK_U32(1U, frame[21U]);
         }
+    }
+}
+
+static void test_session_start_marks_only_first_page(void)
+{
+    SignalResult result = {0};
+    H743MeasurementPager pager;
+    uint8_t frame[H743_SET_FS_FRAME_SIZE];
+
+    result.status = SIGNAL_STATUS_VALID;
+    result.fundamental_Hz = 100000.0f;
+    result.upp_V = 0.250f;
+    result.urms_V = 0.088f;
+    result.component_count = 1U;
+    result.component[0] = (SignalComponent){100000.0f, 0.100f, 0.0f};
+
+    H743MeasurementPager_Init(&pager);
+    CHECK_TRUE(H743MeasurementPager_Load(
+        &pager, &result, 2048780U, 10500000U, 1U));
+    CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, true, frame));
+    CHECK_TRUE((frame[3U] & H743_MEASUREMENT_FLAG_SESSION_START) != 0U);
+    CHECK_U32(1U, read_u16_le(&frame[10U]));
+    CHECK_U32(10500000U, read_u32_le(&frame[12U]));
+    for (unsigned int page = 1U; page < H743_MEASUREMENT_PAGE_COUNT; ++page)
+    {
+        CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, true, frame));
+        CHECK_TRUE((frame[3U] & H743_MEASUREMENT_FLAG_SESSION_START) == 0U);
     }
 }
 
@@ -153,23 +189,22 @@ static void test_new_results_do_not_mix_pages_inside_a_cycle(void)
     {
         const SignalResult result = make_snapshot_result(100000U + page);
 
-        CHECK_TRUE(H743MeasurementPager_Load(&pager, &result, 2048780U));
-        CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, frame));
+        CHECK_TRUE(H743MeasurementPager_Load(
+            &pager, &result, 2048780U, 2048780U, 1U));
+        CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, false, frame));
         CHECK_U32(page, (frame[3U] >> H743_MEASUREMENT_PAGE_SHIFT) & 0x07U);
         if (page == 0U)
         {
-            first_model_id = (uint8_t)(frame[3U]
-                >> H743_MEASUREMENT_MODEL_SHIFT);
-            CHECK_U32(100000U, read_u32_le(&frame[10U]));
+            first_model_id = model_id_of(frame[3U]);
+            CHECK_U32(100000U, read_u32_le(&frame[16U]));
         }
         else
         {
-            CHECK_U32(first_model_id,
-                (uint8_t)(frame[3U] >> H743_MEASUREMENT_MODEL_SHIFT));
+            CHECK_U32(first_model_id, model_id_of(frame[3U]));
         }
         if (page == 1U)
         {
-            CHECK_U32(50U, read_u16_le(&frame[10U]));
+            CHECK_U32(50U, read_u16_le(&frame[16U]));
         }
     }
 
@@ -177,23 +212,22 @@ static void test_new_results_do_not_mix_pages_inside_a_cycle(void)
     {
         const SignalResult result = make_snapshot_result(200000U + page);
 
-        CHECK_TRUE(H743MeasurementPager_Load(&pager, &result, 2048780U));
-        CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, frame));
+        CHECK_TRUE(H743MeasurementPager_Load(
+            &pager, &result, 2048780U, 2048780U, 1U));
+        CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, false, frame));
         if (page == 0U)
         {
-            second_model_id = (uint8_t)(frame[3U]
-                >> H743_MEASUREMENT_MODEL_SHIFT);
+            second_model_id = model_id_of(frame[3U]);
             CHECK_TRUE(second_model_id != first_model_id);
-            CHECK_U32(200000U, read_u32_le(&frame[10U]));
+            CHECK_U32(200000U, read_u32_le(&frame[16U]));
         }
         else
         {
-            CHECK_U32(second_model_id,
-                (uint8_t)(frame[3U] >> H743_MEASUREMENT_MODEL_SHIFT));
+            CHECK_U32(second_model_id, model_id_of(frame[3U]));
         }
         if (page == 1U)
         {
-            CHECK_U32(100U, read_u16_le(&frame[10U]));
+            CHECK_U32(100U, read_u16_le(&frame[16U]));
         }
     }
 }
@@ -214,26 +248,27 @@ static void test_two_components_leave_third_slot_invalid(void)
     result.component[1] = (SignalComponent){250000.0f, 0.025f, -0.75f};
 
     H743MeasurementPager_Init(&pager);
-    CHECK_TRUE(H743MeasurementPager_Load(&pager, &result, 2048780U));
+    CHECK_TRUE(H743MeasurementPager_Load(
+        &pager, &result, 2048780U, 2048780U, 1U));
     for (page = 0U; page < H743_MEASUREMENT_PAGE_COUNT; ++page)
     {
-        CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, frame));
+        CHECK_TRUE(H743MeasurementPager_EncodeNext(&pager, false, frame));
         if (page == 2U)
         {
-            CHECK_U32(1U, frame[10U]);
-            CHECK_U32(1U, frame[15U]);
+            CHECK_U32(1U, frame[16U]);
+            CHECK_U32(1U, frame[21U]);
         }
         else if (page == 3U)
         {
-            CHECK_U32(2U, frame[10U]);
-            CHECK_U32(1U, frame[15U]);
+            CHECK_U32(2U, frame[16U]);
+            CHECK_U32(1U, frame[21U]);
         }
         else if (page == 4U)
         {
-            CHECK_U32(0U, frame[10U]);
-            CHECK_U32(0U, read_u16_le(&frame[11U]));
-            CHECK_U32(0U, read_u16_le(&frame[13U]));
-            CHECK_U32(0U, frame[15U]);
+            CHECK_U32(0U, frame[16U]);
+            CHECK_U32(0U, read_u16_le(&frame[17U]));
+            CHECK_U32(0U, read_u16_le(&frame[19U]));
+            CHECK_U32(0U, frame[21U]);
         }
     }
 }
@@ -241,6 +276,7 @@ static void test_two_components_leave_third_slot_invalid(void)
 int main(void)
 {
     test_five_pages_share_one_model_snapshot();
+    test_session_start_marks_only_first_page();
     test_new_results_do_not_mix_pages_inside_a_cycle();
     test_two_components_leave_third_slot_invalid();
     if (g_failures != 0U)

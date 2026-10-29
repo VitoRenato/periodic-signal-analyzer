@@ -316,3 +316,63 @@ else()
     )
 endif()
 add_test(NAME sample_rate_policy_tests COMMAND sample_rate_policy_tests)
+
+add_executable(measurement_flow_tests
+    test_measurement_flow.c
+    ${PROJECT_SOURCE_DIR}/Firmware_H743/Core/Src/processor_app.c
+    ${PROJECT_SOURCE_DIR}/Firmware_H743/Core/Src/processor_telemetry_schedule.c
+    ${PROJECT_SOURCE_DIR}/Firmware_H743/Core/Src/sample_rate_policy.c
+    ${PROJECT_SOURCE_DIR}/Protocol/Src/acq_frame_header.c
+    ${PROJECT_SOURCE_DIR}/Protocol/Src/h743_crc32.c
+    ${PROJECT_SOURCE_DIR}/Protocol/Src/h743_measurement_pages.c
+    ${PROJECT_SOURCE_DIR}/Protocol/Src/h743_set_fs_protocol.c
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/app/measurement_lock_policy.c
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/app/measurement_session.c
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/app/measurement_stability.c
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/protocol/acq_frame_tx.c
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/protocol/h743_measurement_rx.c
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/protocol/h743_measurement_model.c
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/Core/Src/spicmd.c
+)
+target_include_directories(measurement_flow_tests PRIVATE
+    fakes
+    ${PROJECT_SOURCE_DIR}/Firmware_H743/Core/Inc
+    ${PROJECT_SOURCE_DIR}/Algorithm/Inc
+    ${PROJECT_SOURCE_DIR}/Protocol/Inc
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/app
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/protocol
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/Core/Inc
+)
+if(MSVC)
+    target_compile_options(measurement_flow_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(measurement_flow_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+    target_link_libraries(measurement_flow_tests PRIVATE m)
+endif()
+add_test(NAME measurement_flow_tests COMMAND measurement_flow_tests)
+
+add_executable(voltage_calibration_tests test_voltage_calibration.c)
+target_include_directories(voltage_calibration_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/Algorithm/Private
+)
+target_link_libraries(voltage_calibration_tests PRIVATE signal_analyzer)
+if(MSVC)
+    target_compile_options(voltage_calibration_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(voltage_calibration_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+endif()
+add_test(NAME voltage_calibration_tests COMMAND voltage_calibration_tests)
+
+add_executable(model_quality_tests test_model_quality.c)
+target_include_directories(model_quality_tests PRIVATE ${PROJECT_SOURCE_DIR}/Algorithm/Private)
+target_link_libraries(model_quality_tests PRIVATE signal_analyzer)
+if(MSVC)
+    target_compile_options(model_quality_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(model_quality_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME model_quality_tests COMMAND model_quality_tests)

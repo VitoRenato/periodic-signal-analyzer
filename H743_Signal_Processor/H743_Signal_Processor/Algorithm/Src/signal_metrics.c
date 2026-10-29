@@ -227,6 +227,11 @@ bool SignalMetrics_Populate(
         return false;
     }
 
+    /* A strong fitted interferer must not hide a poor target-band fit. */
+    if (fit->residual_rms_V * fit->residual_rms_V > 0.1 * urms_V * urms_V)
+    {
+        return false;
+    }
     result->fundamental_Hz = component[0U].frequency_Hz;
     result->upp_V = (float)upp_V;
     result->urms_V = (float)urms_V;

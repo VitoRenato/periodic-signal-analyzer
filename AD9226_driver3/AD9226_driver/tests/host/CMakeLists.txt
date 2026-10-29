@@ -232,3 +232,50 @@ else()
     )
 endif()
 add_test(NAME acq_frame_tx_tests COMMAND acq_frame_tx_tests)
+
+add_executable(calibration_export_tests
+    test_calibration_export.c
+    ../../USER/app/calibration_export.c
+)
+target_include_directories(calibration_export_tests PRIVATE
+    ../../USER/app
+)
+if(MSVC)
+    target_compile_options(calibration_export_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(calibration_export_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+endif()
+add_test(NAME calibration_export_tests COMMAND calibration_export_tests)
+
+add_executable(main_calibration_chain_tests
+    test_main_calibration_chain.c
+    ../../USER/app/measurement_stability.c
+    ../../USER/app/calibration_export.c
+    ../../USER/app/measurement_lock_policy.c
+    ../../USER/app/measurement_session.c
+    ../../USER/protocol/h743_measurement_model.c
+)
+target_include_directories(main_calibration_chain_tests PRIVATE
+    fakes_mainchain
+    ../../Core/Inc
+    ../../USER/app
+    ../../USER/protocol
+    ../../USER/config
+    ../../USER/drivers
+    ../../USER/bsp
+)
+if(MSVC)
+    target_compile_options(main_calibration_chain_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(main_calibration_chain_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+        -ffunction-sections -fdata-sections
+    )
+    target_link_libraries(main_calibration_chain_tests PRIVATE
+        m
+        -Wl,--gc-sections
+    )
+endif()
+add_test(NAME main_calibration_chain_tests COMMAND main_calibration_chain_tests)
