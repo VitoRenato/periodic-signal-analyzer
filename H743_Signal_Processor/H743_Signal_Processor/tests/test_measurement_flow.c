@@ -133,7 +133,7 @@ static void set_result(SignalResult *r, uint8_t status, uint8_t quality,
     r->component[0].amplitude_peak_V = 0.5f;
 }
 
-SignalStatus SignalAnalyzer_Process(
+SignalStatus SignalAnalyzer_ProcessCalibrated(
     const uint16_t s[SIGNAL_FRAME_SAMPLES], uint32_t fs, SignalResult *r)
 {
     (void)s;

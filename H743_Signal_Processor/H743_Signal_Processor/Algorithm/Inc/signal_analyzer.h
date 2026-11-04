@@ -77,6 +77,14 @@ SignalStatus SignalAnalyzer_Process(
     uint32_t sample_rate_Hz,
     SignalResult *result);
 
+/* Fixed passive frontend: frequency-dependent amplitude correction is applied
+ * after raw-domain model validation. Residual and SNR remain uncorrected.
+ */
+SignalStatus SignalAnalyzer_ProcessCalibrated(
+    const uint16_t samples[SIGNAL_FRAME_SAMPLES],
+    uint32_t sample_rate_Hz,
+    SignalResult *result);
+
 #ifdef __cplusplus
 }
 #endif

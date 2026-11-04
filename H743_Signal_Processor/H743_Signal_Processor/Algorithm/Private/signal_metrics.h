@@ -12,4 +12,9 @@ bool SignalMetrics_Populate(
     const OrthogonalFitResult *fit,
     SignalResult *result);
 
+bool SignalMetrics_PopulateCalibrated(
+    const HarmonicModel *model,
+    const OrthogonalFitResult *fit,
+    SignalResult *result);
+
 #endif

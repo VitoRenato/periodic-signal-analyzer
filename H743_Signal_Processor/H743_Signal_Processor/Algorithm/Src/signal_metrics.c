@@ -1,4 +1,5 @@
 #include "signal_metrics.h"
+#include "frontend_response.h"
 
 #include <float.h>
 #include <math.h>
@@ -187,10 +188,11 @@ static int SignalMetrics_CalculateValues(
         && (*urms_V <= (double)FLT_MAX);
 }
 
-bool SignalMetrics_Populate(
+static bool SignalMetrics_PopulateInternal(
     const HarmonicModel *model,
     const OrthogonalFitResult *fit,
-    SignalResult *result)
+    SignalResult *result,
+    bool calibrated)
 {
     SignalComponent component[SIGNAL_MAX_COMPONENTS] = {{0}};
     unsigned int order[SIGNAL_MAX_COMPONENTS] = {0U};
@@ -216,19 +218,32 @@ bool SignalMetrics_Populate(
         || !SignalMetrics_GetHarmonicOrders(
             component,
             component_count,
-            order)
-        || !SignalMetrics_CalculateValues(
-            component,
-            order,
-            component_count,
-            &upp_V,
-            &urms_V))
+            order))
     {
         return false;
     }
 
-    /* A strong fitted interferer must not hide a poor target-band fit. */
-    if (fit->residual_rms_V * fit->residual_rms_V > 0.1 * urms_V * urms_V)
+    double raw_power_V2 = 0.0;
+    for (component_index = 0U; component_index < component_count; ++component_index)
+    {
+        const double peak_V = (double)component[component_index].amplitude_peak_V;
+        raw_power_V2 += 0.5 * peak_V * peak_V;
+    }
+    /* Equalization must not relax the raw-domain target-fit rejection gate. */
+    if (fit->residual_rms_V * fit->residual_rms_V > 0.1 * raw_power_V2)
+    {
+        return false;
+    }
+    if (calibrated)
+    {
+        for (component_index = 0U; component_index < component_count; ++component_index)
+        {
+            component[component_index].amplitude_peak_V *=
+                FrontendResponse_Gain(component[component_index].frequency_Hz);
+        }
+    }
+    if (!SignalMetrics_CalculateValues(
+            component, order, component_count, &upp_V, &urms_V))
     {
         return false;
     }
@@ -249,4 +264,20 @@ bool SignalMetrics_Populate(
     }
 
     return true;
+}
+
+bool SignalMetrics_Populate(
+    const HarmonicModel *model,
+    const OrthogonalFitResult *fit,
+    SignalResult *result)
+{
+    return SignalMetrics_PopulateInternal(model, fit, result, false);
+}
+
+bool SignalMetrics_PopulateCalibrated(
+    const HarmonicModel *model,
+    const OrthogonalFitResult *fit,
+    SignalResult *result)
+{
+    return SignalMetrics_PopulateInternal(model, fit, result, true);
 }

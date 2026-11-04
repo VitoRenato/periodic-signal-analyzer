@@ -376,3 +376,21 @@ else()
     target_compile_options(model_quality_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 add_test(NAME model_quality_tests COMMAND model_quality_tests)
+
+add_executable(frontend_response_tests test_frontend_response.c)
+target_include_directories(frontend_response_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/Algorithm/Private
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/protocol)
+target_sources(frontend_response_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/protocol/h743_measurement_rx.c
+    ${PROJECT_SOURCE_DIR}/../../AD9226_driver3/AD9226_driver/USER/protocol/h743_measurement_model.c)
+target_compile_definitions(frontend_response_tests PRIVATE
+    FRONTEND_BENCH_FIXTURE="${PROJECT_SOURCE_DIR}/tests/fixtures/frontend_response.csv"
+    FRONTEND_FOLLOWUP_FIXTURE="${PROJECT_SOURCE_DIR}/tests/fixtures/frontend_response_followup.csv")
+target_link_libraries(frontend_response_tests PRIVATE signal_analyzer h743_measurement_pages)
+if(MSVC)
+    target_compile_options(frontend_response_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(frontend_response_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME frontend_response_tests COMMAND frontend_response_tests)

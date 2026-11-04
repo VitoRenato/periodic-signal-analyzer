@@ -105,10 +105,11 @@ static void SignalAnalyzer_ApplySampleRateStatus(
     }
 }
 
-SignalStatus SignalAnalyzer_Process(
+static SignalStatus SignalAnalyzer_ProcessInternal(
     const uint16_t samples[SIGNAL_FRAME_SAMPLES],
     uint32_t sample_rate_Hz,
-    SignalResult *result)
+    SignalResult *result,
+    bool calibrated)
 {
     SignalPreprocessStats stats;
     SpectrumCandidate candidates[SIGNAL_MAX_CANDIDATES] = {{0}};
@@ -238,7 +239,9 @@ SignalStatus SignalAnalyzer_Process(
 
     result->residual_rms_V = (float)fit.residual_rms_V;
     result->snr_dB = (float)fit.snr_dB;
-    if (!SignalMetrics_Populate(&model, &fit, result))
+    if (!(calibrated
+        ? SignalMetrics_PopulateCalibrated(&model, &fit, result)
+        : SignalMetrics_Populate(&model, &fit, result)))
     {
         result->status = SIGNAL_STATUS_MODEL_INVALID;
         return result->status;
@@ -254,4 +257,20 @@ SignalStatus SignalAnalyzer_Process(
         &model,
         result);
     return result->status;
+}
+
+SignalStatus SignalAnalyzer_Process(
+    const uint16_t samples[SIGNAL_FRAME_SAMPLES],
+    uint32_t sample_rate_Hz,
+    SignalResult *result)
+{
+    return SignalAnalyzer_ProcessInternal(samples, sample_rate_Hz, result, false);
+}
+
+SignalStatus SignalAnalyzer_ProcessCalibrated(
+    const uint16_t samples[SIGNAL_FRAME_SAMPLES],
+    uint32_t sample_rate_Hz,
+    SignalResult *result)
+{
+    return SignalAnalyzer_ProcessInternal(samples, sample_rate_Hz, result, true);
 }

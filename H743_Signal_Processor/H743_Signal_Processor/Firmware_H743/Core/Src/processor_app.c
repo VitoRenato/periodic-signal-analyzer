@@ -288,7 +288,7 @@ void ProcessorApp_RunOnce(void)
             uint32_t pending_request_Hz;
 
             (void)memset(&result, 0, sizeof(result));
-            g_diagnostics.last_signal_status = SignalAnalyzer_Process(
+            g_diagnostics.last_signal_status = SignalAnalyzer_ProcessCalibrated(
                 samples,
                 sample_rate_Hz,
                 &result);
