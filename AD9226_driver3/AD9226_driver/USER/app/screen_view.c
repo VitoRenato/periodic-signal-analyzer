@@ -160,6 +160,11 @@ static void ScreenView_RenderWave(const ScreenDataFrame *frame, ScreenWavePeriod
   }
 
   points = (visible_count < SCREEN_WAVE_VISIBLE_POINTS) ? visible_count : SCREEN_WAVE_VISIBLE_POINTS;
+  /* 单周期仍取前256个源点，横向展开到整个绘图区。 */
+  if ((periods == SCREEN_WAVE_PERIOD_1) && (points > 1u))
+  {
+    points = SCREEN_WAVE_VISIBLE_POINTS;
+  }
   if (points == 0u)
   {
     return;

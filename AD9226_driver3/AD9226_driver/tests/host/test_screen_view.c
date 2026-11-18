@@ -116,14 +116,26 @@ static void test_three_periods_fit_width_and_preserve_last_sample(void)
 static void test_one_period_does_not_read_second_period(void)
 {
   ScreenDataFrame frame = {0};
+  ScreenDataFrame original;
   frame.wave_count = 768u;
   for (uint16_t i = 0; i < frame.wave_count; ++i) frame.wave[i] = 2048u;
   frame.wave[255] = 1u;
   frame.wave[256] = 4095u;
+  original = frame;
   ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_1);
-  assert(s_last_wave_len == 256u);
-  assert(s_wave_canvas[255] == 8u);
+  assert(s_last_wave_len == SCREEN_WAVE_VISIBLE_POINTS);
+  assert(s_wave_canvas[0] == 80u);
+  assert(s_wave_canvas[SCREEN_WAVE_VISIBLE_POINTS - 1u] == 8u);
   for (uint16_t i = 0; i < s_last_wave_len; ++i) assert(s_wave_canvas[i] <= 80u);
+  assert(memcmp(&frame, &original, sizeof(frame)) == 0);
+
+  frame.wave_count = 256u;
+  original = frame;
+  ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_1);
+  assert(s_last_wave_len == SCREEN_WAVE_VISIBLE_POINTS);
+  assert(s_wave_canvas[SCREEN_WAVE_VISIBLE_POINTS - 1u] == 8u);
+  for (uint16_t i = 0; i < s_last_wave_len; ++i) assert(s_wave_canvas[i] <= 80u);
+  assert(memcmp(&frame, &original, sizeof(frame)) == 0);
 }
 
 static void test_all_adc_codes_stay_inside_wave_height(void)
@@ -204,10 +216,16 @@ static void test_empty_and_single_point_wave(void)
   const unsigned before = s_wave_addt_count;
   ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_3);
   assert(s_wave_addt_count == before);
+  ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_1);
+  assert(s_wave_addt_count == before);
   frame.wave_count = 1u;
   frame.wave[0] = 3072u;
   ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_3);
   assert(s_wave_addt_count == before + 1u);
+  assert(s_last_wave_len == 1u);
+  assert(s_wave_canvas[0] == 116u);
+  ScreenView_RenderWavePeriods(&frame, SCREEN_WAVE_PERIOD_1);
+  assert(s_wave_addt_count == before + 2u);
   assert(s_last_wave_len == 1u);
   assert(s_wave_canvas[0] == 116u);
 }

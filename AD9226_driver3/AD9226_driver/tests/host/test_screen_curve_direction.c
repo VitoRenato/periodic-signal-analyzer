@@ -158,7 +158,7 @@ static void test_asymmetric_model_survives_period_switches(void)
   for (size_t mode = 0u; mode < sizeof(modes) / sizeof(modes[0]); ++mode)
   {
     const uint16_t visible = (modes[mode] == SCREEN_WAVE_PERIOD_1) ? 256u : 768u;
-    const uint16_t points = (visible < 761u) ? visible : 761u;
+    const uint16_t points = SCREEN_WAVE_VISIBLE_POINTS;
     ScreenView_RenderWavePeriods(&frame, modes[mode]);
     assert(s_wave_len == points);
     for (uint16_t x = 0u; x < points; ++x)
@@ -166,11 +166,10 @@ static void test_asymmetric_model_survives_period_switches(void)
       const uint16_t src = (uint16_t)(((uint32_t)x * (visible - 1u)) / (points - 1u));
       assert(s_wave_canvas[x] == expected_wave_pixel(original.wave[src]));
     }
-    if (modes[mode] == SCREEN_WAVE_PERIOD_1)
-      for (uint16_t x = points; x < 761u; ++x) assert(s_wave_canvas[x] == 0u);
+
     assert(memcmp(&frame, &original, sizeof(frame)) == 0);
   }
-  puts("UART asymmetric model: periods 3 -> 1 -> 3 preserve time order and input frame");
+  puts("UART asymmetric model: periods 3 -> 1 -> 3 fill full width and preserve time order and input frame");
 }
 
 int main(void)
