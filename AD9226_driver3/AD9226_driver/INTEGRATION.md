@@ -1,31 +1,5 @@
-# EDC2026_Screen 协议发送端说明
+# F407 系统集成
 
-## 修改点
+F407 是 SPI1 主机。每次交换向 H743 上传帧头和 4096 点样本，同时在 MISO 读取一个控制槽。H743 拉高 READY 后，F407 发起交换；采样和模型报文见 [SPI1 通信协议](../../H743_Signal_Processor/H743_Signal_Processor/docs/COMMUNICATION_PROTOCOL.md)。
 
-`Core/Src/disp_uart.c` 已改为发送 `ScreenDataFrame`(与 EDC2026_Screen 二进制兼容)。
-
-调用方式:
-
-```c
-#include "disp_uart.h"
-
-int16_t samples[256];   /* 单周期 256 点,signed -2048..2047 */
-...
-DispUart_SendWaveform(samples, 256, seq, f0_hz);
-```
-
-## 协议字段
-
-- `magic` = 0x32434445 ("EDC2")
-- `byte_len` = 1084
-- `frequency_mhz` = f0_hz * 1000
-- `vpp_uv` / `vrms_uv`: 由 signed 波形自动换算(假设 3.3V 12bit ADC,1 LSB = 806uV)
-- `wave[]`: signed + 2048 → uint16 0..4095
-- `fft_count` = 0,fft[] = 0
-- `wave_periods` = 3(默认),mode = 0(wave)
-- `checksum` = sum32(前 1080 字节)
-
-## 注意
-
-- 一帧 1084 字节,921600 波特率下约 9.4ms,建议刷新率 <= 30~50Hz。
-- 若上一次 DMA 未完成则返回 HAL_BUSY,不阻塞。
+F407 锁定模型后构建内部 `ScreenDataFrame`，由 `ScreenApp_SetFrame()` 交给显示任务。`ScreenApp_Task()` 检查帧序号，再由显示层通过 USART2 向 TJC 发送控件命令及曲线数据。接线与控件见 [TJC 屏幕工程](../../TJC_HMI/README.md)。

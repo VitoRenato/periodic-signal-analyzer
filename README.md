@@ -2,24 +2,26 @@
 
 基于 STM32F407、AD9226 和 STM32H743 的周期信号测量项目。F407 采集并行 ADC 数据，H743 分析频率与幅值，再由 F407 把测量结果、重建波形和频谱送到淘晶驰串口屏。
 
-## 当前状态
+## 测量链路
 
-采集端已恢复为真实十二位原始码，只清除 GPIO 读数的高四位，不再用低八位展开或固定零点修补数据。ADC 数据线使用 PF0～PF11，时钟输出为 PE9，OTR 保留在 PC12。
+1. **F407 采集。** PE9 的 TIM1_CH1 向 AD9226 提供采样时钟，默认约 2.04878 MSPS。TIM1 更新事件触发 DMA2 Stream5，以 16 位半字读取 GPIOF。每帧 4096 点，AD9226 的 D0～D11 对应 PF0～PF11，样本取 GPIOF 的低 12 位。
+2. **H743 分析。** F407 通过 SPI1 发送采样率分频值、帧序号、测量请求代号及原始采样。H743 估计基频和至多三个正弦分量（含基波），在回传结果中提供幅度、相位、模型峰峰值和交流有效值。回传模型可携带采样率请求；生成测量值时按分量频率应用输入前端的幅度补偿。
+3. **F407 显示。** F407 锁定结果后，通过 USART2 更新淘晶驰屏幕上的基频、Vpp、Vrms、重建波形和频谱。波形由返回的分量叠加生成，Vpp 和 Vrms 是该模型的测量值。非正弦信号含有模型未收录的分量时，屏上波形和峰峰值可能与原始输入不同。
 
-已用零输入及 100 kHz、两档幅度的正弦采样检查原始码和幅度比例。正常测量链路能够锁定并显示结果；屏幕波特率与曲线坐标问题也已在实机上确认修复。屏幕保留原有 40×40 像素网格，固件按 `s_wave` 的 761×161 和 `s_fft` 的 441×121 尺寸绘图，不需要扩大控件。
+## 使用仪器
 
-电压系数尚未做最终标定。信号源标称 250 mVpp 时，屏幕约显示 255～256 mVpp、90 mVrms 和 128 mV 分量峰值；当时示波器读数约为 260 mVpp。这是单频联调记录，不代表全频段精度验收。采样时序、协议异常处理和抗干扰能力仍需继续验证。
+开机自动测量一轮。锁定后保持显示，以新结果触发重画。PA15 短按切换显示 1 或 3 个周期，长按约 1.5 秒或向 F407 调试口发送 `m` 重新测量。发送 `a` 切换自动连测，默认关闭；开启后，每轮结束满 1 秒发起下一轮。
 
 ## 工程入口
 
-| 目录 | 内容 |
+| 入口 | 内容 |
 |---|---|
-| `AD9226_driver3/AD9226_driver/` | F407 采集、板间通信和串口屏固件 |
-| `H743_Signal_Processor/H743_Signal_Processor/` | H743 分析算法、协议与 `Firmware_H743/` 固件 |
-| [TJC_HMI](TJC_HMI/README.md) | 屏幕源工程 `TJCscr.HMI`、控件尺寸和连接说明 |
-| [components/ad9226_f407](components/ad9226_f407/README.md) | 独立驱动组件与历史算法测试，不是当前生产采集入口 |
+| [F407 技术手册](AD9226_driver3/AD9226_driver/F407_AD9226_技术手册.md) | AD9226 采集、接线、按键和调试入口 |
+| [H743 工程](H743_Signal_Processor/H743_Signal_Processor/README.md) | 信号分析、板间通信和构建 |
+| [TJC_HMI](TJC_HMI/README.md) | 串口屏工程、接线和控件 |
+| [AD9226 独立驱动组件](components/ad9226_f407/README.md) | 独立 HAL 采集组件 |
 
-使用 VS Code 时可打开 [periodic-signal-analyzer.code-workspace](periodic-signal-analyzer.code-workspace)。部分技术手册保留了旧架构与旧显示流程，当前行为以本页、[原始码标定说明](AD9226_driver3/AD9226_driver/docs/ADC12_CALIBRATION.md)和实际源码为准。
+使用 VS Code 时可打开 [periodic-signal-analyzer.code-workspace](periodic-signal-analyzer.code-workspace)。烧录时为双板使用配套固件；板间帧格式见 [SPI1 通信协议](H743_Signal_Processor/H743_Signal_Processor/docs/COMMUNICATION_PROTOCOL.md)。
 
 ## 构建固件
 
@@ -56,13 +58,11 @@ cmake --build work/component-host
 ctest --test-dir work/component-host --output-on-failure
 ```
 
-新增回归直接编译生产 ADC 驱动，检查十二位码保留；显示回归检查实际控件的坐标、宽度及频点覆盖。主机测试不替代 ADC 引脚时序、电压精度和屏幕实机验收。
+主机测试覆盖原始采集、测量会话、板间协议、算法及屏幕渲染。ADC 引脚时序、电压精度和显示效果在实机上验证。
 
 ## 导出原始码
 
-F407 调试口为 USART1，PA9 是 TX、PA10 是 RX，参数为 921600 baud、8N1。PA15 按键短按切换 1/3 周期，长按 1.5 s 重新测量；串口发送 `m` 同样触发重新测量，发送 `a` 切换自动连续测量。发送 `c` 或 `C` 可获取一帧 4096 点原始码，完整保存 `[CAL12 BEGIN]` 到 `[CAL12 END]` 的内容。
-
-导出后采集冻结，这一帧不送 H743，屏幕保持原状；再次发送 `c` 可重新取帧。返回正常测量时复位 F407，不发送 `c`。正式标定使用原始码，不使用旧 `d` 命令的电压换算列。`fs_hz` 按定时器寄存器推导，不是示波器实测频率。接线和数据格式见[标定说明](AD9226_driver3/AD9226_driver/docs/ADC12_CALIBRATION.md)。
+F407 调试口使用 USART1（PA9 TX、PA10 RX），921600 baud、8N1。发送 `c` 或 `C` 获取一帧 4096 点原始码，保存 `[CAL12 BEGIN]` 到 `[CAL12 END]`。该帧用于标定，不送 H743，屏幕保持原状。再次发送 `c` 可取下一帧；发送 `m` 或长按 PA15 恢复测量。详见[原始码导出与标定](AD9226_driver3/AD9226_driver/docs/ADC12_CALIBRATION.md)。
 
 ## 许可证
 
